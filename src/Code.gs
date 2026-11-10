@@ -123,7 +123,7 @@ function sheetStore_() {
     settings: function () {
       if (settingsMemo) return settingsMemo;
       var sh = ss.getSheetByName('Settings'), out = {};
-      if (sh) sh.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0] !== '') out[String(r[0]).trim()] = r[1] instanceof Date ? r[1].toISOString() : String(r[1]); });
+      if (sh) sh.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0] !== '') var key = String(r[0]).trim(); out[key] = key === 'courseCredit' ? fixCredit_(r[1]) : r[1] instanceof Date ? r[1].toISOString() : String(r[1]); });
       settingsMemo = out;
       return out;
     },
@@ -134,7 +134,7 @@ function sheetStore_() {
       Object.keys(patch).forEach(function (k) {
         var row = -1;
         for (var i = 1; i < vals.length; i++) if (String(vals[i][0]).trim() === k) { row = i + 1; break; }
-        if (row > 0) sh.getRange(row, 2).setValue(cell(patch[k]));
+        if (row > 0) sh.getRange(row, 2).setNumberFormat('@').setValue(cell(patch[k]));
         else { sh.appendRow([k, cell(patch[k]), SETTINGS_HELP[k] || '']); vals.push([k]); }
       });
       settingsMemo = null;
@@ -159,4 +159,11 @@ function sheetStore_() {
     webAppUrl: function () { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } },
     activeUserEmail: function () { try { return Session.getActiveUser().getEmail(); } catch (e) { return ''; } }
   };
+}
+
+/** หน่วยกิต 2-3-3 ที่ Google Sheet แปลงเป็นวันที่ (2-3-2003 หรือ Date) → คืนเป็น 2-3-3 */
+function fixCredit_(v) {
+  if (v instanceof Date) return v.getDate() + '-' + (v.getMonth() + 1) + '-' + (v.getFullYear() % 100);
+  var m = String(v).match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  return m ? m[1] + '-' + m[2] + '-' + Number(m[3].slice(2)) : String(v);
 }

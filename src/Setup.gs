@@ -34,8 +34,12 @@ function setup() {
   var vals = st.getDataRange().getValues();
   if (!vals.length || vals[0][0] !== 'key') { st.clear(); st.getRange(1, 1, 1, 3).setValues([['key', 'value', 'คำอธิบาย']]); vals = [['key']]; }
   var have = {}; vals.forEach(function (r) { have[r[0]] = true; });
+  st.getRange('A:B').setNumberFormat('@'); // ต้องตั้งเป็นข้อความก่อนเขียน ไม่เช่นนั้น 2-3-3 จะกลายเป็นวันที่
   Object.keys(DEFAULT_SETTINGS).forEach(function (k) { if (!have[k]) st.appendRow([k, DEFAULT_SETTINGS[k], SETTINGS_HELP[k] || '']); });
-  st.getRange('A:B').setNumberFormat('@');
+  // ซ่อมค่าหน่วยกิตที่ Google Sheet แปลงเป็นวันที่ไปแล้ว
+  st.getDataRange().getValues().forEach(function (r, i) {
+    if (r[0] === 'courseCredit' && (r[1] instanceof Date || !/^\d{1,2}-\d{1,2}-\d{1,2}$/.test(String(r[1])))) st.getRange(i + 1, 2).setNumberFormat('@').setValue(DEFAULT_SETTINGS.courseCredit);
+  });
   st.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1E40AF').setFontColor('#ffffff');
   st.setFrozenRows(1); st.setColumnWidth(1, 160); st.setColumnWidth(2, 320); st.setColumnWidth(3, 420);
   writeReadme_(ss);
