@@ -15,7 +15,7 @@ function doGet(e) {
   var boot = { page: p.page === 'admin' ? 'teacher' : (p.cert ? 'cert' : 'student'), cert: String(p.cert || ''), code: String(p.code || '') };
   var t = HtmlService.createTemplateFromFile('App');
   t.bootJson = JSON.stringify(boot).replace(/</g, '\\u003c');
-  var title = 'ห้องเรียนเขียนโปรแกรม';
+  var title = 'ห้องเรียนพัฒนาเว็บแอปพลิเคชัน';
   try { title = settings_(sheetStore_()).courseName; } catch (err) { /* ยังไม่ติดตั้ง */ }
   return t.evaluate()
     .setTitle(title)

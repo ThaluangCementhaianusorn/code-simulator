@@ -56,7 +56,7 @@ t('courseMap: ภารกิจ 1 เปิด ภารกิจ 2–5 ล็�
 t('เปิดกิจกรรมในภารกิจที่ล็อกไม่ได้', () => throws(() => api('getActivity', { token: tok, activityId: 'U2-K' }), /ล็อก/));
 t('ใบความรู้ + markRead', () => {
   const a = api('getActivity', { token: tok, activityId: 'U1-K' });
-  assert.ok(a.content.includes('print'));
+  assert.ok(a.content.includes('```html'));
   api('markRead', { token: tok, activityId: 'U1-K' }); api('markRead', { token: tok, activityId: 'U1-K' });
   assert.strictEqual(store.all('Attempts').filter(x => x.activityId === 'U1-K' && x.studentId === map.student.id).length, 1, 'อ่านซ้ำไม่บันทึกซ้ำ');
 });
@@ -72,7 +72,7 @@ t('ใบงาน: ไม่ส่ง solution และ expected ของช�
 });
 t('คำใบ้: เปิดทีละข้อ และหักคะแนน', () => {
   const h = api('revealHint', { token: tok, activityId: 'U1-W', taskIndex: 0 });
-  assert.ok(h.hint.includes('f-string'));
+  assert.ok(h.hint.includes('class'));
   const a = api('getActivity', { token: tok, activityId: 'U1-W' });
   assert.strictEqual(a.tasks[0].hints.length, 1);
 });
@@ -104,7 +104,6 @@ t('แบบทดสอบ: ไม่ส่งเฉลยไปหน้าเ
 t('ส่งแบบทดสอบ → ผ่านภารกิจ 1 → ได้เกียรติบัตร และปลดล็อกภารกิจ 2', () => {
   const d = actData('U1-Q'), ans = {};
   d.questions.forEach(q => { ans[q.id] = q.type === 'fill' ? ' ' + q.answer[0].toUpperCase() + ' ' : q.type === 'tf' ? String(q.answer) : q.answer; });
-  ans.q6 = '#';
   const r = api('submitQuiz', { token: tok, sessionId: sess.sessionId, answers: ans });
   assert.strictEqual(r.score, 6); assert.ok(!r.revealAnswers, 'ยังมีสิทธิ์อีกครั้ง จึงยังไม่เฉลย');
   assert.strictEqual(r.newCertificates.length, 1); assert.ok(r.unit.passed);

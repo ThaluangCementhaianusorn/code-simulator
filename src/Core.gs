@@ -8,7 +8,7 @@
  *               settings(), secret(k), setSecret(k,v), cacheGet(k), cachePut(k,v,sec), cacheRemove(k),
  *               now(), uuid(), hash(s), lock(fn), webAppUrl(), activeUserEmail()
  */
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '2.0.0';
 
 var SCHEMA = {
   Students: ['id', 'studentCode', 'prefix', 'firstName', 'lastName', 'room', 'pinHash', 'status', 'isSample', 'createdAt'],
@@ -25,15 +25,18 @@ var SCHEMA = {
 var DEFAULT_SETTINGS = {
   schoolName: 'วิทยาลัยตัวอย่าง',
   department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
-  courseName: 'การเขียนโปรแกรมคอมพิวเตอร์เบื้องต้นด้วยภาษา Python',
+  courseName: 'การพัฒนาเว็บแอปพลิเคชัน',
+  courseCode: '31909-2009',
+  courseCredit: '2-3-3',
+  courseDescription: 'ศึกษาและปฏิบัติเกี่ยวกับหลักการออกแบบเว็บแอปพลิเคชันโดยใช้เฟรมเวิร์ก หลักการพัฒนาเว็บแอปพลิเคชันโดยใช้เฟรมเวิร์กที่ได้รับความนิยมในปัจจุบัน การเชื่อมต่อฐานข้อมูล การตกแต่งเว็บแอปพลิเคชันด้วยสไตล์ชีตเฟรมเวิร์ก และอัปโหลดเว็บไซต์ขึ้นบนระบบเครือข่ายอินเทอร์เน็ต',
   academicYear: '2569',
   semester: '2',
   passPercent: '60',
   hintPenalty: '10',
   lockSequential: 'yes',
-  primaryColor: '#1E40AF',
+  primaryColor: '#4F46E5',
   logoUrl: '',
-  certPrefix: 'CS',
+  certPrefix: 'WEB',
   signer1Name: '',
   signer1Position: 'ครูผู้สอน',
   signer2Name: '',
@@ -42,6 +45,8 @@ var DEFAULT_SETTINGS = {
   publicUrl: ''
 };
 
+/** ชื่อวิชาเดิม (รุ่น Python) ใช้ตรวจว่าควรเปลี่ยนเป็นวิชาใหม่ตอนใส่เนื้อหาตัวอย่าง */
+var OLD_COURSE_NAMES = ['การเขียนโปรแกรมคอมพิวเตอร์เบื้องต้นด้วยภาษา Python'];
 var TYPE_NAMES = { knowledge: 'ใบความรู้', worksheet: 'ใบงาน', practice: 'แบบฝึกปฏิบัติ', quiz: 'แบบทดสอบ' };
 var TOKEN_TTL = 6 * 60 * 60;      // 6 ชั่วโมง (สูงสุดของ CacheService)
 var QUIZ_GRACE_MS = 60 * 1000;    // เผื่อเน็ตช้า 60 วินาทีหลังหมดเวลา
@@ -209,7 +214,7 @@ function publicCert_(c, student, S, store) {
 }
 
 function publicSettings_(S, store) {
-  return { schoolName: S.schoolName, department: S.department, courseName: S.courseName, academicYear: S.academicYear, semester: S.semester,
+  return { schoolName: S.schoolName, department: S.department, courseName: S.courseName, courseCode: S.courseCode, courseCredit: S.courseCredit, courseDescription: S.courseDescription, academicYear: S.academicYear, semester: S.semester,
     passPercent: num_(S.passPercent, 60), hintPenalty: num_(S.hintPenalty, 10), primaryColor: S.primaryColor, logoUrl: S.logoUrl,
     signer1Name: S.signer1Name, signer1Position: S.signer1Position, signer2Name: S.signer2Name, signer2Position: S.signer2Position,
     webAppUrl: S.publicUrl || store.webAppUrl(), version: APP_VERSION };
@@ -258,7 +263,11 @@ function afterChange_(store, st, course, S) {
 /* ---------------- API ---------------- */
 var API_ = {};
 
-API_.info = function (store) { return publicSettings_(settings_(store), store); };
+API_.info = function (store) {
+  var out = publicSettings_(settings_(store), store);
+  try { out.outline = loadCourse_(store).units.map(function (u, i) { return { no: i + 1, icon: u.icon, title: u.title, summary: u.summary }; }); } catch (e) { out.outline = []; }
+  return out;
+};
 
 API_.login = function (store, p) {
   var code = String(p.studentCode || '').trim(), pin = String(p.pin || '').trim();
@@ -341,10 +350,10 @@ API_.getActivity = function (store, p) {
   out.tasks = (d.tasks || []).map(function (t, i) {
     var used = hints.filter(function (h) { return num_(h.taskIndex) === i; }).map(function (h) { return num_(h.hintIndex); }).sort();
     var lt = (lastDetail.tasks || [])[i];
-    return { title: t.title, prompt: t.prompt || '', starterCode: t.starterCode || '', sampleInput: t.sampleInput || '', max: taskMax_(t),
+    return { title: t.title, prompt: t.prompt || '', lang: t.lang || 'html', starterCode: t.starterCode || '', sampleInput: t.sampleInput || '', max: taskMax_(t),
       hintCount: (t.hints || []).length, hints: used.map(function (k) { return (t.hints || [])[k]; }).filter(String),
       lastCode: lt ? lt.code : null,
-      tests: (t.tests || []).map(function (x) { return { input: x.input || '', expected: x.hidden ? null : String(x.expected), hidden: !!x.hidden, score: num_(x.score, 1), compare: x.compare || 'trim' }; }) };
+      tests: (t.tests || []).map(function (x) { return { input: x.input || '', check: x.check || '', label: x.label || '', expected: x.hidden ? null : String(x.expected), hidden: !!x.hidden, score: num_(x.score, 1), compare: x.compare || 'trim' }; }) };
   });
   return out;
 };
@@ -800,7 +809,16 @@ function coreApi(store, method, payload) {
 /** ใส่เนื้อหาตัวอย่าง + นักศึกษาตัวอย่าง 10 คน (PIN 1234) + ผลการเรียนสมมติ เพื่อให้เห็นภาพแดชบอร์ด */
 function seedSampleData_(store, withContent) {
   return store.lock(function () {
-    if (withContent) importCourseData_(store, getSeedCourse_());
+    if (withContent) {
+      importCourseData_(store, getSeedCourse_());
+      // ระบบที่ติดตั้งรุ่น Python ไว้ → เปลี่ยนข้อมูลรายวิชาเป็นวิชาใหม่ (ถ้าครูไม่ได้แก้ชื่อวิชาเอง)
+      var cur = store.settings() || {};
+      if (!cur.courseName || OLD_COURSE_NAMES.indexOf(String(cur.courseName)) >= 0) {
+        var patch = {}; ['courseName', 'courseCode', 'courseCredit', 'courseDescription'].forEach(function (k) { patch[k] = DEFAULT_SETTINGS[k]; });
+        if (!cur.certPrefix || cur.certPrefix === 'CS') patch.certPrefix = DEFAULT_SETTINGS.certPrefix;
+        store.setSettings(patch);
+      }
+    }
     var S = settings_(store), course = loadCourse_(store);
     var existing = {}; store.all('Students').forEach(function (s) { existing[String(s.studentCode)] = s; });
     var done = [0, 1, 2, 3, 10, 2, 1, 4, 0, 3];
@@ -846,12 +864,15 @@ var SETTINGS_HELP = {
   schoolName: 'ชื่อสถานศึกษา (แสดงบนเกียรติบัตร)',
   department: 'แผนกวิชา',
   courseName: 'ชื่อรายวิชา',
+  courseCode: 'รหัสวิชา เช่น 31909-2009',
+  courseCredit: 'ทฤษฎี-ปฏิบัติ-หน่วยกิต เช่น 2-3-3',
+  courseDescription: 'คำอธิบายรายวิชา (แสดงหน้าแรก)',
   academicYear: 'ปีการศึกษา (พ.ศ.)',
   semester: 'ภาคเรียน',
   passPercent: 'เกณฑ์ผ่านแต่ละภารกิจ (%) ตั้งรายภารกิจได้ในแท็บ เนื้อหา',
   hintPenalty: 'หักคะแนนต่อการเปิดคำใบ้ 1 ครั้ง (% ของคะแนนเต็มข้อนั้น)',
   lockSequential: 'yes = ต้องผ่านภารกิจก่อนหน้าจึงเปิดภารกิจถัดไป / no = เปิดทุกภารกิจ',
-  primaryColor: 'สีหลักของหน้าเว็บ เช่น #1E40AF',
+  primaryColor: 'สีหลักของหน้าเว็บ เช่น #4F46E5',
   logoUrl: 'ลิงก์รูปตราสถานศึกษา (https://...) สำหรับเกียรติบัตร เว้นว่างได้',
   certPrefix: 'อักษรนำหน้าเลขที่เกียรติบัตร',
   signer1Name: 'ชื่อผู้ลงนามคนที่ 1 (เช่น ครูผู้สอน)',
@@ -870,7 +891,8 @@ function validateSetting_(k, v) {
   if ((k === 'logoUrl' || k === 'publicUrl') && v && !/^https:\/\/\S+$/.test(v)) fail_(k + ' ต้องขึ้นต้นด้วย https://');
   if ((k === 'schoolName' || k === 'courseName' || k === 'certPrefix') && !v) fail_(SETTINGS_HELP[k] + ' ห้ามว่าง');
   if (k === 'certPrefix' && !/^[A-Za-z0-9]{1,8}$/.test(v)) fail_('อักษรนำหน้าเกียรติบัตรใช้ A–Z หรือตัวเลข ไม่เกิน 8 ตัว');
-  if (v.length > 300) fail_(k + ' ยาวเกินไป');
+  if (k === 'courseCredit' && v && !/^\d+-\d+-\d+$/.test(v)) fail_('หน่วยกิตต้องอยู่ในรูป ทฤษฎี-ปฏิบัติ-หน่วยกิต เช่น 2-3-3');
+  if (v.length > (k === 'courseDescription' ? 2000 : 300)) fail_(k + ' ยาวเกินไป');
   return v;
 }
 

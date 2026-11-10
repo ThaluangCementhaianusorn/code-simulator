@@ -392,12 +392,7 @@ var TeacherApp = (function () {
     });
   }
 
-  var TEMPLATES = {
-    knowledge: { content: '# หัวข้อ\nอธิบายเนื้อหา\n\n```python\nprint("ตัวอย่างที่รันได้")\n```' },
-    worksheet: { intro: 'คำชี้แจง', maxAttempts: 3, tasks: [{ title: 'ข้อ 1', prompt: 'โจทย์', starterCode: '', sampleInput: '', hints: ['คำใบ้'], solution: 'print("สวัสดี")', tests: [{ input: '', expected: 'สวัสดี', score: 5 }] }] },
-    practice: { intro: 'ฝึกได้ไม่จำกัดครั้ง', tasks: [{ title: 'ข้อ 1', prompt: 'รับตัวเลข n แล้วแสดง n x 2', starterCode: 'n = int(input())\n', sampleInput: '4', hints: ['print(n * 2)'], solution: 'n = int(input())\nprint(n * 2)', tests: [{ input: '4', expected: '8', score: 3 }, { input: '10', expected: '20', score: 2, hidden: true }] }] },
-    quiz: { intro: 'คำชี้แจง', timeLimitMin: 10, maxAttempts: 2, shuffle: true, questions: [{ id: 'q1', type: 'mc', text: 'คำถาม', choices: ['ก', 'ข', 'ค', 'ง'], answer: 0, score: 1, explain: '' }, { id: 'q2', type: 'output', text: 'ผลลัพธ์คืออะไร', code: 'print(1 + 1)', answer: '2', score: 1 }] }
-  };
+  var TEMPLATES = {"knowledge":{"content":"# หัวข้อ\nอธิบายเนื้อหา\n\n```html\n<h1>ตัวอย่างที่รันได้</h1>\n<p>แก้แล้วดูผลบนหน้าจอมือถือ</p>\n```\n\n```js\nconsole.log(\"โค้ด JavaScript แสดงใน Console\");\n```"},"worksheet":{"intro":"คำชี้แจง","maxAttempts":3,"tasks":[{"title":"ข้อ 1","lang":"html","prompt":"ให้ `<h1>` แสดงคำว่า `สวัสดี`","starterCode":"<h1></h1>\n","hints":["พิมพ์ข้อความระหว่าง <h1> กับ </h1>"],"solution":"<h1>สวัสดี</h1>","tests":[{"label":"h1 แสดง สวัสดี","check":"return text(\"h1\")","expected":"สวัสดี","score":5}]}]},"practice":{"intro":"ฝึกได้ไม่จำกัดครั้ง","tasks":[{"title":"ข้อ 1","lang":"html","prompt":"กดปุ่ม `#btn` แล้ว `#out` แสดง `คลิกแล้ว`","starterCode":"<button id=\"btn\">กด</button>\n<p id=\"out\"></p>\n<script>\n<\/script>\n","hints":["document.querySelector(\"#btn\").addEventListener(\"click\", …)"],"solution":"<button id=\"btn\">กด</button>\n<p id=\"out\"></p>\n<script>\n  document.querySelector(\"#btn\").addEventListener(\"click\", () => { document.querySelector(\"#out\").textContent = \"คลิกแล้ว\"; });\n<\/script>","tests":[{"label":"เริ่มต้นยังว่าง","check":"return text(\"#out\")","expected":"","score":1},{"label":"กดแล้วแสดง คลิกแล้ว","check":"await click(\"#btn\"); return text(\"#out\")","expected":"คลิกแล้ว","score":2,"hidden":true}]}]},"quiz":{"intro":"คำชี้แจง","timeLimitMin":10,"maxAttempts":2,"shuffle":true,"questions":[{"id":"q1","type":"mc","text":"คำถาม","choices":["ก","ข","ค","ง"],"answer":0,"score":1,"explain":""},{"id":"q2","type":"output","text":"ผลลัพธ์ใน Console คืออะไร","code":"console.log(1 + 1);","answer":"2","score":1}]}};
 
   function editActivity(a, units) {
     modal(function (m, close) {
@@ -407,7 +402,7 @@ var TeacherApp = (function () {
         '<div class="row"><div class="grow"><label class="f">ประเภท</label><select class="in" name="type"><option value="knowledge">📖 ใบความรู้</option><option value="worksheet">📝 ใบงาน</option><option value="practice">💻 แบบฝึกปฏิบัติ</option><option value="quiz">✅ แบบทดสอบ</option></select></div><div class="grow"><label class="f">สถานะ</label><select class="in" name="status"><option value="active">แสดง</option><option value="hidden">ซ่อน</option></select></div></div>' +
         '<label class="f">ชื่อกิจกรรม</label><input class="in" name="title" required>' +
         '<label class="f">ข้อมูลกิจกรรม (JSON)</label><textarea class="in mono" name="dataJson" rows="16" spellcheck="false" style="font-size:13px"></textarea>' +
-        '<details class="small"><summary>รูปแบบข้อมูล</summary><p>ใบความรู้: <code>content</code> เป็น Markdown บล็อก <code>```python</code> รันได้ทันที<br>ใบงาน/แบบฝึก: <code>tasks[]</code> แต่ละข้อมี title, prompt, starterCode, sampleInput, hints[], solution, tests[{input, expected, score, hidden, compare}] — compare: trim (ค่าเริ่มต้น) | exact | ignorespace | contains | number<br>แบบทดสอบ: <code>questions[]</code> type = mc (choices + answer เป็นตำแหน่งเริ่ม 0) | tf (answer true/false) | output (answer ผลลัพธ์) | fill (answer เป็นข้อความหรือรายการคำตอบที่ยอมรับ)</p></details>';
+        '<details class="small"><summary>รูปแบบข้อมูล</summary><p>ใบความรู้: <code>content</code> เป็น Markdown บล็อก <code>```html</code> และ <code>```js</code> รันบนหน้าจอมือถือได้ทันที (<code>```html norun</code> = แสดงอย่างเดียว)<br>ใบงาน/แบบฝึก: <code>tasks[]</code> แต่ละข้อมี title, prompt, lang (html|js), starterCode, hints[], solution, tests[{label, check, expected, score, hidden, compare}]<br><b>check</b> = โค้ด JavaScript ที่รันในหน้าเว็บของผู้เรียนแล้ว return ค่ามาเทียบกับ expected ตัวช่วย: text(sel) texts(sel) val(sel) count(sel) exists(sel) css(sel, prop) attr(sel, name) click(sel) type(sel, ค่า) submit(sel) wait(ms) waitFor(fn|sel) logs db store(key) $ $$ · ใช้ <code>fetch("/api/students")</code> (students, products, rooms, bookings, repairs) เป็นฐานข้อมูลจำลอง<br>compare: trim (ค่าเริ่มต้น) | exact | ignorespace | contains | number<br>แบบทดสอบ: <code>questions[]</code> type = mc (choices + answer เป็นตำแหน่งเริ่ม 0) | tf (answer true/false) | output (code ที่ใช้ console.log และ answer ผลลัพธ์) | fill (answer เป็นข้อความหรือรายการคำตอบที่ยอมรับ)</p></details>';
       units.forEach(function (u) { f.unitId.appendChild(el('option', { value: u.id }, u.order + '. ' + u.title)); });
       f.unitId.value = a.unitId; f.order.value = a.order || 1; f.type.value = a.type; f.status.value = a.status || 'active'; f.title.value = a.title || '';
       try { f.dataJson.value = JSON.stringify(JSON.parse(a.dataJson || '{}'), null, 2); } catch (e) { f.dataJson.value = a.dataJson || ''; }
@@ -448,9 +443,11 @@ var TeacherApp = (function () {
     return d.tasks.reduce(function (p, t, i) {
       return p.then(function () {
         if (!t.solution) { html.push('<p>ข้อ ' + (i + 1) + ': <span class="chip wait">ไม่มี solution</span></p>'); return; }
-        return PyRunner.tests(t.solution, (t.tests || []).map(function (x) { return x.input || ''; })).then(function (rs) {
+        var web = t.lang !== 'python';
+        var run = web ? WebRunner.tests(t.solution, t.tests || [], { lang: t.lang === 'js' ? 'js' : 'html' }) : PyRunner.tests(t.solution, (t.tests || []).map(function (x) { return x.input || ''; }));
+        return run.then(function (rs) {
           var bad = [];
-          rs.forEach(function (r, k) { if (r.error || r.timeout || !cmpOut(r.output, t.tests[k].expected, t.tests[k].compare)) bad.push('ชุด ' + (k + 1) + ': ได้ <code>' + esc(r.error ? thaiError(r.error).raw : r.output) + '</code> แต่ expected คือ <code>' + esc(t.tests[k].expected) + '</code>'); });
+          rs.forEach(function (r, k) { if (r.error || r.timeout || !cmpOut(r.output, t.tests[k].expected, t.tests[k].compare)) bad.push('ชุด ' + (k + 1) + (t.tests[k].label ? ' (' + esc(t.tests[k].label) + ')' : '') + ': ได้ <code>' + esc(r.error ? (web ? r.error.message : thaiError(r.error).raw) : r.output) + '</code> แต่ expected คือ <code>' + esc(t.tests[k].expected) + '</code>'); });
           html.push('<p>ข้อ ' + (i + 1) + ' ' + esc(t.title || '') + ': ' + (bad.length ? '<span class="chip bad">ไม่ผ่าน ' + bad.length + '/' + rs.length + '</span><br>' + bad.join('<br>') : '<span class="chip ok">✓ เฉลยผ่านครบ ' + rs.length + ' ชุด</span>') + '</p>');
         });
       });
@@ -475,7 +472,7 @@ var TeacherApp = (function () {
     return Api.call('tSettings').then(function (d) {
       view.innerHTML = '<h1>ตั้งค่าระบบ</h1><p class="small muted" style="margin-top:-6px">บันทึกลงแท็บ Settings ใน Google Sheet ทันที มีผลกับนักศึกษาทุกคนตั้งแต่การเปิดหน้าครั้งถัดไป</p>';
       var c = el('div', { class: 'card' }); var f = el('form');
-      var groups = [['ข้อมูลสถานศึกษาและรายวิชา', ['schoolName', 'department', 'courseName', 'academicYear', 'semester']],
+      var groups = [['ข้อมูลสถานศึกษาและรายวิชา', ['schoolName', 'department', 'courseCode', 'courseName', 'courseCredit', 'courseDescription', 'academicYear', 'semester']],
         ['เกณฑ์การผ่านและคะแนน', ['passPercent', 'hintPenalty', 'lockSequential']],
         ['เกียรติบัตร', ['certPrefix', 'signer1Name', 'signer1Position', 'signer2Name', 'signer2Position', 'logoUrl']],
         ['หน้าเว็บและการเข้าถึง', ['primaryColor', 'publicUrl', 'adminEmails']]];
@@ -487,6 +484,7 @@ var TeacherApp = (function () {
           f.appendChild(el('label', { class: 'f', for: 'set-' + k }, it.help));
           var inp;
           if (k === 'lockSequential') { inp = el('select', { class: 'in', id: 'set-' + k, name: k }); inp.appendChild(el('option', { value: 'yes' }, 'yes — ต้องผ่านภารกิจก่อนหน้า')); inp.appendChild(el('option', { value: 'no' }, 'no — เปิดทุกภารกิจ')); }
+          else if (k === 'courseDescription') { inp = el('textarea', { class: 'in', id: 'set-' + k, name: k, rows: 4 }); }
           else if (k === 'primaryColor') { inp = el('input', { class: 'in', id: 'set-' + k, name: k, type: 'color', style: 'max-width:120px;padding:4px' }); }
           else inp = el('input', { class: 'in', id: 'set-' + k, name: k, inputmode: (k === 'passPercent' || k === 'hintPenalty') ? 'numeric' : null });
           inp.value = it.value; inp.dataset.orig = inp.value;

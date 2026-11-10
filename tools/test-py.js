@@ -36,19 +36,20 @@ vm.runInContext(src('Core.gs') + '\n' + src('Content.gs') + '\n' + src('Content2
   t('trace: จำกัดจำนวนขั้น', () => { const r = call('trace', { code: 'for i in range(10000):\n    x = i', limit: 50 }); assert.strictEqual(r.steps.length, 50); assert.ok(r.truncated); });
   t('รันซ้ำไม่ค้างตัวแปรเดิม', () => { call('run', { code: 'zz = 1' }); const r = call('run', { code: 'print(zz)' }); assert.strictEqual(r.error.type, 'NameError'); });
 
+  console.log('(เนื้อหารายวิชาปัจจุบันเป็นเว็บ ตรวจด้วย tools/test-web.js — ไฟล์นี้ตรวจเฉพาะโจทย์ lang: python)');
   console.log('เฉลยของทุกโจทย์ต้องผ่านชุดทดสอบ และโค้ดตั้งต้นต้องยังไม่ผ่าน');
   const seed = JSON.parse(JSON.stringify(ctx.seed));
   seed.units.forEach(u => u.activities.forEach(a => {
-    (a.data.tasks || []).forEach(tk => t(a.id + ' ' + tk.title, () => {
+    (a.data.tasks || []).filter(tk => tk.lang === 'python').forEach(tk => t(a.id + ' ' + tk.title, () => {
       const rs = call('tests', { code: tk.solution, inputs: tk.tests.map(x => x.input) });
       rs.forEach((r, k) => { assert.strictEqual(r.error, null, JSON.stringify(r.error)); assert.ok(ctx.cmp(r.output, tk.tests[k].expected, tk.tests[k].compare), 'ชุด ' + (k + 1) + ': ได้ ' + JSON.stringify(r.output) + ' ต้องการ ' + JSON.stringify(tk.tests[k].expected)); });
       const st = call('tests', { code: tk.starterCode || '', inputs: tk.tests.map(x => x.input) });
       assert.ok(st.some((r, k) => r.error || !ctx.cmp(r.output, tk.tests[k].expected, tk.tests[k].compare)), 'โค้ดตั้งต้นไม่ควรผ่านทุกชุด');
     }));
-    if (a.type === 'quiz') a.data.questions.filter(q => q.type === 'output').forEach(q => t(a.id + ' ' + q.id + ' (ทายผลลัพธ์)', () => {
+    if (a.type === 'quiz') a.data.questions.filter(q => q.type === 'output' && q.lang === 'python').forEach(q => t(a.id + ' ' + q.id + ' (ทายผลลัพธ์)', () => {
       const r = call('run', { code: q.code }); assert.strictEqual(r.error, null); assert.ok(ctx.cmp(r.output, [].concat(q.answer)[0]), 'ได้ ' + JSON.stringify(r.output));
     }));
-    if (a.type === 'knowledge') {
+    if (a.type === 'knowledge' && a.data.content.includes('```python')) {
       const blocks = a.data.content.split('```python').slice(1).map(b => b.split('```')[0].replace(/^\s*norun.*\n/, '').replace(/^\n/, ''));
       t(a.id + ' โค้ดตัวอย่าง ' + blocks.length + ' บล็อกรันได้', () => blocks.forEach((b, i) => {
         const r = call('run', { code: b, stdin: '72\n5\n8\n0\n10 20 30' }); assert.strictEqual(r.error, null, 'บล็อก ' + (i + 1) + ': ' + JSON.stringify(r.error) + '\n' + b);

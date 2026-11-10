@@ -1,0 +1,486 @@
+<!-- WebRunner.html — ตัวจำลองเว็บแอป: รัน HTML/CSS/JavaScript/Vue ใน iframe (sandbox) แสดงผลบนหน้าจอมือถือ
+     + ฐานข้อมูลจำลอง fetch('/api/...') + localStorage จำลอง + ตัวช่วยตรวจงานอัตโนมัติ -->
+<script>
+/* ===== WEB-PRELUDE-START ===== (โค้ดส่วนนี้ถูกฉีดเข้าไปทำงานในหน้าเว็บของผู้เรียน) */
+function __simPrelude(cfg) {
+  var RID = cfg.rid, P = window.parent;
+  function send(m) { m.__sim = RID; try { P.postMessage(m, '*'); } catch (e) {} }
+  var logs = window.__logs = [];
+  function show(v, d) {
+    d = d || 0;
+    if (typeof v === 'string') return d ? JSON.stringify(v) : v;
+    if (v === undefined) return 'undefined';
+    if (v === null || typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'function') return 'ƒ ' + (v.name || 'function') + '()';
+    if (v instanceof Error) return v.name + ': ' + v.message;
+    if (typeof Element !== 'undefined' && v instanceof Element) return '<' + v.tagName.toLowerCase() + (v.id ? '#' + v.id : '') + (typeof v.className === 'string' && v.className.trim() ? '.' + v.className.trim().split(/\s+/).join('.') : '') + '>';
+    if (d > 2) return Array.isArray(v) ? '[…]' : '{…}';
+    try {
+      if (Array.isArray(v)) return '[' + v.slice(0, 50).map(function (x) { return show(x, d + 1); }).join(', ') + (v.length > 50 ? ', …' : '') + ']';
+      var ks = Object.keys(v);
+      return '{ ' + ks.slice(0, 30).map(function (k) { return k + ': ' + show(v[k], d + 1); }).join(', ') + (ks.length > 30 ? ', …' : '') + ' }';
+    } catch (e) { return String(v); }
+  }
+  ['log', 'info', 'warn', 'error', 'debug'].forEach(function (k) {
+    var orig = console[k];
+    console[k] = function () {
+      var args = Array.prototype.slice.call(arguments);
+      if (typeof args[0] === 'string' && /^\[Vue warn\]/.test(args[0])) args = [args[0]];
+      var s = args.map(function (x) { return show(x, 0); }).join(' ');
+      if (/development build of Vue|Vue Devtools|vuejs\/devtools/.test(s)) return;
+      if (k === 'log' && logs.length < 500) logs.push(s);
+      send({ t: 'log', level: k === 'warn' || k === 'error' ? k : 'log', text: s.slice(0, 4000) });
+      try { if (orig) orig.apply(console, arguments); } catch (e) {}
+    };
+  });
+  console.table = function (x) { console.log(x); };
+  window.addEventListener('error', function (e) {
+    if (e.target && e.target !== window) { var u = e.target.src || e.target.href; if (u) send({ t: 'error', kind: 'resource', message: 'โหลดไฟล์ไม่สำเร็จ: ' + u }); return; }
+    var inPage = !e.filename || /srcdoc|^about:/.test(e.filename);
+    send({ t: 'error', name: (e.error && e.error.name) || '', message: String(e.message || 'Error').replace(/^Uncaught\s+/, ''), line: inPage && e.lineno ? Math.max(1, e.lineno - cfg.lineOffset) : null });
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason; send({ t: 'error', name: (r && r.name) || '', message: (r && r.name ? r.name + ': ' : '') + ((r && r.message) || String(r)) + ' (ใน Promise/async)', line: null });
+  });
+  /* กันลูปไม่รู้จบ: โค้ดลูปทุกอันถูกเติม if(__lp(n))break; */
+  var lp = {};
+  window.__lp = function (id) {
+    var now = Date.now(), s = lp[id];
+    if (!s || now - s.l > 60) s = lp[id] = { s: now, l: now };
+    s.l = now;
+    if (now - s.s > cfg.loopMs) { lp[id] = null; send({ t: 'error', name: 'LoopTimeout', message: 'LoopTimeout: ลูปทำงานนานเกิน ' + (cfg.loopMs / 1000) + ' วินาที จึงถูกหยุด', line: null }); return true; }
+    return false;
+  };
+  /* localStorage จำลอง (iframe แบบ sandbox ใช้ของจริงไม่ได้) เก็บค่าไว้ข้ามการรันในตัวจำลองเดียวกัน */
+  function memStorage(init, persist) {
+    var d = {};
+    Object.keys(init || {}).forEach(function (k) { d[k] = String(init[k]); });
+    function sync() { if (persist) send({ t: 'storage', data: d }); }
+    var api = {
+      getItem: function (k) { k = String(k); return Object.prototype.hasOwnProperty.call(d, k) ? d[k] : null; },
+      setItem: function (k, v) { d[String(k)] = String(v); sync(); },
+      removeItem: function (k) { delete d[String(k)]; sync(); },
+      clear: function () { Object.keys(d).forEach(function (k) { delete d[k]; }); sync(); },
+      key: function (i) { return Object.keys(d)[i] || null; }
+    };
+    return typeof Proxy === 'function' ? new Proxy(api, {
+      get: function (t, k) { if (k === 'length') return Object.keys(d).length; if (k in t || typeof k !== 'string') return t[k]; return t.getItem(k); },
+      set: function (t, k, v) { t.setItem(k, v); return true; }
+    }) : api;
+  }
+  var real = true;
+  try { window.localStorage.getItem('x'); } catch (e) { real = false; }
+  if (!real) {
+    try { Object.defineProperty(window, 'localStorage', { value: memStorage(cfg.storage, true), configurable: true }); } catch (e) {}
+    try { Object.defineProperty(window, 'sessionStorage', { value: memStorage({}, false), configurable: true }); } catch (e) {}
+  }
+  /* alert แสดงเป็นกล่องข้อความในหน้าจอมือถือ (ไม่บล็อกหน้าเว็บหลัก) */
+  window.alert = function (msg) {
+    msg = msg === undefined ? '' : String(msg);
+    send({ t: 'log', level: 'log', text: '🔔 alert: ' + msg });
+    if (cfg.test) return;
+    var show1 = function () {
+      var b = document.createElement('div');
+      b.setAttribute('style', 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:2147483647;font-family:system-ui,sans-serif');
+      var c = document.createElement('div');
+      c.setAttribute('style', 'background:#fff;color:#111;border-radius:14px;padding:18px 18px 10px;width:78%;max-width:300px;box-shadow:0 10px 30px rgba(0,0,0,.3);text-align:center;font-size:15px;white-space:pre-wrap');
+      c.textContent = msg;
+      var ok = document.createElement('button'); ok.textContent = 'ตกลง';
+      ok.setAttribute('style', 'display:block;width:100%;margin-top:12px;border:0;border-top:1px solid #eee;background:none;color:#2563eb;font-size:16px;padding:10px;cursor:pointer');
+      ok.onclick = function () { b.remove(); };
+      c.appendChild(ok); b.appendChild(c); document.body.appendChild(b);
+    };
+    if (document.body) show1(); else document.addEventListener('DOMContentLoaded', show1);
+  };
+  if (cfg.test) { window.confirm = function () { return true; }; window.prompt = function (q, d) { return d === undefined ? '' : String(d); }; }
+  /* ---------- ฐานข้อมูลจำลอง: fetch('/api/ตาราง') รองรับ GET POST PUT PATCH DELETE ---------- */
+  var db = window.__db = cfg.db || {};
+  function nextId(list) { var m = 0; list.forEach(function (x) { m = Math.max(m, Number(x.id) || 0); }); return m + 1; }
+  function apiHandle(method, path, query, body) {
+    var parts = path.replace(/^\/?api\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+    var col = parts[0], id = parts[1];
+    if (!col) return [200, { tables: Object.keys(db) }];
+    if (!db[col]) { if (method === 'POST') db[col] = []; else return [404, { error: 'ไม่พบตาราง ' + col + ' (ตารางที่มี: ' + Object.keys(db).join(', ') + ')' }]; }
+    var list = db[col];
+    function idx() { for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return i; return -1; }
+    if (method === 'GET') {
+      if (id !== undefined) { var i = idx(); return i < 0 ? [404, { error: 'ไม่พบข้อมูล id ' + id }] : [200, list[i]]; }
+      var out = list.slice();
+      Object.keys(query).forEach(function (k) {
+        var v = String(query[k]).toLowerCase();
+        if (k === 'q') out = out.filter(function (r) { return Object.keys(r).some(function (f) { return String(r[f]).toLowerCase().indexOf(v) >= 0; }); });
+        else if (k.charAt(0) !== '_') out = out.filter(function (r) { return String(r[k]).toLowerCase() === v; });
+      });
+      if (query._sort) { var f = query._sort, dir = query._order === 'desc' ? -1 : 1; out.sort(function (a, b) { return (a[f] > b[f] ? 1 : a[f] < b[f] ? -1 : 0) * dir; }); }
+      if (query._limit) out = out.slice(0, Number(query._limit));
+      return [200, out];
+    }
+    if (body === '__notjson') return [400, { error: 'body ต้องเป็นข้อความ JSON: ใช้ body: JSON.stringify(ข้อมูล)' }];
+    if (method === 'POST') {
+      if (id !== undefined) return [405, { error: 'POST ให้ส่งไปที่ /api/' + col + ' (ไม่ต้องใส่ id)' }];
+      if (!body || typeof body !== 'object') return [400, { error: 'ต้องส่งข้อมูลมาด้วย' }];
+      var rec = {}; Object.keys(body).forEach(function (k) { rec[k] = body[k]; }); rec.id = nextId(list); list.push(rec);
+      return [201, rec];
+    }
+    if (method === 'PUT' || method === 'PATCH') {
+      if (id === undefined) return [400, { error: 'ต้องระบุ id เช่น /api/' + col + '/1' }];
+      var j = idx(); if (j < 0) return [404, { error: 'ไม่พบข้อมูล id ' + id }];
+      if (!body || typeof body !== 'object') return [400, { error: 'ต้องส่งข้อมูลมาด้วย' }];
+      var nr = {}; if (method === 'PATCH') Object.keys(list[j]).forEach(function (k) { nr[k] = list[j][k]; });
+      Object.keys(body).forEach(function (k) { nr[k] = body[k]; }); nr.id = list[j].id; list[j] = nr;
+      return [200, nr];
+    }
+    if (method === 'DELETE') {
+      if (id === undefined) return [400, { error: 'ต้องระบุ id ที่จะลบ เช่น /api/' + col + '/1' }];
+      var q = idx(); if (q < 0) return [404, { error: 'ไม่พบข้อมูล id ' + id }];
+      return [200, list.splice(q, 1)[0]];
+    }
+    return [405, { error: 'ไม่รองรับ ' + method }];
+  }
+  var realFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    var m = url.match(/^(?:https?:\/\/(?:sim\.local|localhost)(?::\d+)?)?\/?(api(?:\/[^?#]*)?)(\?[^#]*)?$/);
+    if (!m) return realFetch ? realFetch.apply(window, arguments) : Promise.reject(new TypeError('Failed to fetch'));
+    var path = '/' + m[1], query = {};
+    (m[2] || '').replace(/^\?/, '').split('&').forEach(function (kv) { if (!kv) return; var p = kv.split('='); query[decodeURIComponent(p[0])] = decodeURIComponent((p[1] || '').replace(/\+/g, ' ')); });
+    var method = String(init.method || 'GET').toUpperCase(), body = null;
+    if (init.body !== undefined && init.body !== null) {
+      if (typeof init.body !== 'string') body = '__notjson';
+      else { try { body = JSON.parse(init.body); } catch (e) { body = '__notjson'; } }
+    }
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        var r;
+        try { r = apiHandle(method, path, query, body); } catch (e) { r = [500, { error: String(e) }]; }
+        if (method !== 'GET' && r[0] < 300) send({ t: 'db', data: db });
+        send({ t: 'net', method: method, url: path + (m[2] || ''), status: r[0] });
+        resolve(new Response(JSON.stringify(r[1]), { status: r[0], headers: { 'Content-Type': 'application/json' } }));
+      }, cfg.apiDelay);
+    });
+  };
+  /* ---------- ตัวช่วยสำหรับชุดตรวจ (tests[].check) ---------- */
+  function norm(s) { return String(s).replace(/\s+/g, ' ').trim(); }
+  function q1(s) { return typeof s === 'string' ? document.querySelector(s) : s; }
+  var H = {
+    $: function (s) { return q1(s); },
+    $$: function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); },
+    text: function (s) { var e = q1(s); return e ? norm(e.textContent) : null; },
+    texts: function (s) { return H.$$(s).map(function (e) { return norm(e.textContent); }).join('|'); },
+    val: function (s) { var e = q1(s); return e ? e.value : null; },
+    count: function (s) { return document.querySelectorAll(s).length; },
+    exists: function (s) { return !!q1(s); },
+    css: function (s, p) { var e = q1(s); return e ? getComputedStyle(e).getPropertyValue(p).trim() : null; },
+    attr: function (s, a) { var e = q1(s); return e ? e.getAttribute(a) : null; },
+    visible: function (s) { var e = q1(s); if (!e) return false; var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; },
+    click: function (s) { var e = q1(s); if (!e) throw new Error('ไม่พบ ' + s); e.click(); return H.wait(60); },
+    type: function (s, v) {
+      var e = q1(s); if (!e) throw new Error('ไม่พบ ' + s);
+      if (e.focus) e.focus(); e.value = v;
+      e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
+      return H.wait(40);
+    },
+    submit: function (s) {
+      var f = q1(s); if (!f) throw new Error('ไม่พบ ' + s);
+      if (f.requestSubmit) f.requestSubmit(); else f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return H.wait(60);
+    },
+    wait: function (ms) { return new Promise(function (r) { setTimeout(r, ms || 0); }); },
+    waitFor: function (fn, ms) {
+      ms = ms || 3000; var t0 = Date.now();
+      return new Promise(function (res) {
+        (function loop() {
+          var v; try { v = typeof fn === 'string' ? document.querySelector(fn) : fn(); } catch (e) { v = null; }
+          if (v) return res(v); if (Date.now() - t0 > ms) return res(false); setTimeout(loop, 30);
+        })();
+      });
+    },
+    logs: logs, db: db,
+    store: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  };
+  window.addEventListener('message', function (ev) {
+    var m = ev.data; if (!m || m.__simCheck !== RID) return;
+    var names = Object.keys(H), fn;
+    try { fn = Function.apply(null, names.concat(['return (async function () {\n' + m.code + '\n})();'])); }
+    catch (e) { send({ t: 'checkResult', id: m.id, error: 'โค้ดตรวจผิดรูปแบบ: ' + e.message }); return; }
+    Promise.resolve().then(function () { return fn.apply(null, names.map(function (k) { return H[k]; })); }).then(function (v) {
+      send({ t: 'checkResult', id: m.id, value: v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v) });
+    }, function (e) { send({ t: 'checkResult', id: m.id, error: (e && e.message) || String(e) }); });
+  });
+  window.addEventListener('load', function () { send({ t: 'ready', title: document.title || '' }); });
+}
+/* ===== WEB-PRELUDE-END ===== */
+
+/* ======================= WebRunner ======================= */
+var WebRunner = (function () {
+  var PRE = '(' + __simPrelude.toString() + ')', PRE_LINES = PRE.split('\n').length - 1;
+  var handlers = {}, seq = 0;
+  /** ฐานข้อมูลตัวอย่างของ fetch('/api/...') — ใช้ในใบความรู้/ใบงานภารกิจที่ 8–10 */
+  var SAMPLE_DB = {
+    students: [
+      { id: 1, code: '69201001', name: 'ธนพล ใจดี', room: 'ปวส.1/1', major: 'เทคโนโลยีสารสนเทศ', gpa: 3.45 },
+      { id: 2, code: '69201002', name: 'กมลวรรณ แสงทอง', room: 'ปวส.1/1', major: 'เทคโนโลยีสารสนเทศ', gpa: 3.82 },
+      { id: 3, code: '69201003', name: 'ปิยะพงษ์ ศรีสุข', room: 'ปวส.1/2', major: 'คอมพิวเตอร์ธุรกิจ', gpa: 2.95 },
+      { id: 4, code: '69201004', name: 'ณัฐธิดา มีสุข', room: 'ปวส.1/2', major: 'คอมพิวเตอร์ธุรกิจ', gpa: 3.10 },
+      { id: 5, code: '69201005', name: 'วีรภัทร ทองดี', room: 'ปวส.1/1', major: 'เทคโนโลยีสารสนเทศ', gpa: 3.67 }
+    ],
+    products: [
+      { id: 1, name: 'กาแฟเย็น', price: 45, category: 'เครื่องดื่ม', stock: 12, icon: '☕' },
+      { id: 2, name: 'ชาเขียวนม', price: 40, category: 'เครื่องดื่ม', stock: 8, icon: '🍵' },
+      { id: 3, name: 'ครัวซองต์', price: 35, category: 'เบเกอรี่', stock: 5, icon: '🥐' },
+      { id: 4, name: 'เค้กช็อกโกแลต', price: 65, category: 'เบเกอรี่', stock: 0, icon: '🍰' },
+      { id: 5, name: 'น้ำส้มคั้น', price: 30, category: 'เครื่องดื่ม', stock: 20, icon: '🍊' },
+      { id: 6, name: 'แซนด์วิชทูน่า', price: 55, category: 'อาหาร', stock: 7, icon: '🥪' }
+    ],
+    rooms: [
+      { id: 1, name: 'ห้องประชุม 1', seats: 20, floor: 2 },
+      { id: 2, name: 'ห้องปฏิบัติการคอม 301', seats: 40, floor: 3 },
+      { id: 3, name: 'ห้องสมุดกลุ่ม A', seats: 8, floor: 1 }
+    ],
+    bookings: [
+      { id: 1, roomId: 1, name: 'ครูสมศรี', date: '2026-12-01', time: '09:00', topic: 'ประชุมแผนก' },
+      { id: 2, roomId: 2, name: 'ชมรมคอมพิวเตอร์', date: '2026-12-02', time: '13:00', topic: 'อบรม Vue' }
+    ],
+    repairs: [
+      { id: 1, title: 'คอมพิวเตอร์เปิดไม่ติด', place: 'ห้อง 301', status: 'รอดำเนินการ', reporter: 'ธนพล' },
+      { id: 2, title: 'โปรเจกเตอร์ภาพไม่ชัด', place: 'ห้องประชุม 1', status: 'กำลังซ่อม', reporter: 'ครูสมศรี' },
+      { id: 3, title: 'เครื่องปรับอากาศมีน้ำหยด', place: 'ห้องสมุด', status: 'เสร็จแล้ว', reporter: 'กมลวรรณ' }
+    ]
+  };
+  function freshDb() { return JSON.parse(JSON.stringify(SAMPLE_DB)); }
+
+  window.addEventListener('message', function (ev) {
+    var m = ev.data; if (!m || typeof m.__sim !== 'string') return;
+    var h = handlers[m.__sim]; if (!h || ev.source !== h.frame.contentWindow) return;
+    try { h.fn(m); } catch (e) {}
+  });
+
+  /** เติมตัวกันลูปไม่รู้จบในสคริปต์ที่เขียนเอง (ไม่เพิ่มบรรทัด เลขบรรทัดของ error จึงตรงกับในตัวแก้ไข) */
+  function guardJs(js) {
+    var n = 0;
+    return js.replace(/\b(for|while)\s*\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)\s*\{/g, function (m, k, c) { return k + '(' + c + '){if(__lp(' + (++n) + '))break;'; })
+      .replace(/\bdo\s*\{/g, function () { return 'do{if(__lp(' + (++n + 500) + '))break;'; });
+  }
+  function guard(html) {
+    return html.replace(/(<script\b(?![^>]*\bsrc\s*=)[^>]*>)([\s\S]*?)(<\/script>)/gi, function (m, a, js, c) {
+      return /type\s*=\s*["']?(text\/(x-)?template|importmap|application\/(ld\+)?json)/i.test(a) ? m : a + guardJs(js) + c;
+    });
+  }
+  function build(code, cfg, lang) {
+    var pre = '<script>' + PRE + '(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ')<\/script>';
+    var body = lang === 'js' ? '<script>' + code + '\n<\/script>' : String(code || '');
+    body = guard(body);
+    var m = body.match(/^\s*<!doctype[^>]*>/i);
+    return m ? m[0] + pre + body.slice(m[0].length) : '<!DOCTYPE html>' + pre + body;
+  }
+  function mount(frame, code, o) {
+    o = o || {};
+    if (frame.__rid) delete handlers[frame.__rid];
+    var rid = 'r' + (++seq) + Math.random().toString(36).slice(2, 8);
+    frame.__rid = rid;
+    handlers[rid] = { frame: frame, fn: o.onMsg || function () {} };
+    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+    frame.srcdoc = build(code, { rid: rid, test: !!o.test, loopMs: o.test ? 1500 : 2500, apiDelay: o.test ? 20 : 220, storage: o.storage || {}, db: o.db || freshDb(), lineOffset: PRE_LINES }, o.lang);
+    return rid;
+  }
+  function unmount(frame) { if (frame.__rid) delete handlers[frame.__rid]; frame.__rid = null; }
+
+  var testHost = null;
+  function host() {
+    if (!testHost || !document.documentElement.contains(testHost)) {
+      testHost = el('div', { class: 'sim-testhost', 'aria-hidden': 'true', style: 'position:fixed;right:0;bottom:0;width:360px;height:1px;overflow:hidden;opacity:.01;pointer-events:none;z-index:-1' });
+      document.documentElement.appendChild(testHost);
+    }
+    return testHost;
+  }
+  /** รันหน้าเว็บ 1 ครั้งในเบื้องหลัง แล้วรันโค้ดตรวจ check → { output, error, errors[], logs[] } */
+  function runOne(code, check, o) {
+    o = o || {};
+    return new Promise(function (resolve) {
+      var f = el('iframe', { title: 'ตรวจงาน', tabindex: '-1' });
+      f.style.cssText = 'border:0;display:block;width:' + (o.width || 360) + 'px;height:700px';
+      var done = false, errs = [], logs = [], timer;
+      function finish(r) {
+        if (done) return; done = true; clearTimeout(timer); unmount(f); f.remove();
+        r.errors = errs; r.logs = logs; resolve(r);
+      }
+      timer = setTimeout(function () { finish({ output: '', timeout: true, error: { name: 'Timeout', message: 'หน้าเว็บโหลดหรือตรวจนานเกินไป' } }); }, o.timeoutMs || 15000);
+      host().appendChild(f);
+      var loads = 0;
+      f.addEventListener('load', function () {
+        // หน้าเว็บโหลดซ้ำ = ฟอร์มถูกส่งจริงหรือเปลี่ยนหน้า (โค้ดตรวจจะหายไปด้วย)
+        if (++loads > 1) finish({ output: '', error: { name: 'Reloaded', message: 'หน้าเว็บถูกโหลดใหม่ระหว่างตรวจ อาจเพราะส่งฟอร์มโดยไม่ได้ใช้ e.preventDefault() หรือ @submit.prevent' } });
+      });
+      mount(f, code, { lang: o.lang, test: true, db: o.db, onMsg: function (m) {
+        if (m.t === 'error') errs.push(m);
+        else if (m.t === 'log') logs.push(m.text);
+        else if (m.t === 'ready') setTimeout(function () {
+          if (check === null) { finish({ output: logs.join('\n'), error: errs[0] || null }); return; }
+          try { f.contentWindow.postMessage({ __simCheck: f.__rid, id: 1, code: check || 'return document.body.innerText' }, '*'); } catch (e) { finish({ output: '', error: { name: 'Crash', message: String(e) } }); }
+        }, o.settleMs || 150);
+        else if (m.t === 'checkResult') finish(m.error !== undefined ? { output: '', error: { name: 'CheckError', message: m.error } } : { output: m.value, error: null });
+      } });
+    });
+  }
+  /** tests: [{ check | input }] → ผลของแต่ละชุดตามลำดับ (ใช้หน้าเว็บใหม่ทุกชุด สถานะจึงไม่ปนกัน) */
+  function tests(code, list, o) {
+    var out = [];
+    return list.reduce(function (p, t) {
+      return p.then(function () { return runOne(code, t.check || t.input || '', o).then(function (r) { out.push(r); }); });
+    }, Promise.resolve()).then(function () { return out; });
+  }
+  return {
+    mount: mount, unmount: unmount, tests: tests, freshDb: freshDb, build: build, guardJs: guardJs,
+    /** รันแล้วเก็บ console.log (ใช้กับข้อ "ทายผลลัพธ์" ของ JavaScript) */
+    logs: function (code, lang) { return runOne(code, null, { lang: lang || 'js', settleMs: 300 }); }
+  };
+})();
+
+/* ======================= แปล error ของเว็บเป็นภาษาไทย ======================= */
+function thaiJsError(m) {
+  var s = String((m && m.message) || ''), x;
+  if ((m && m.name === 'LoopTimeout') || /LoopTimeout/.test(s)) return 'ลูปทำงานนานเกินไปจึงถูกหยุด ตรวจเงื่อนไขของ while / for ว่ามีจุดสิ้นสุด (เช่น ลืม i++)';
+  if (m && m.kind === 'resource') return 'โหลดไฟล์จากลิงก์นี้ไม่ได้ ตรวจการสะกดลิงก์ใน src / href และการเชื่อมต่ออินเทอร์เน็ต';
+  if (m && m.name === 'Timeout') return 'หน้าเว็บโหลดหรือทำงานนานเกินไป';
+  if (/\[Vue warn\]/.test(s)) {
+    if ((x = s.match(/Property "([^"]+)" was accessed during render but is not defined/))) return 'Vue ไม่รู้จัก ' + x[1] + ' — ต้องประกาศใน data() หรือ setup() แล้ว return ออกมา และสะกดให้ตรงกับในเทมเพลต';
+    if ((x = s.match(/Failed to resolve component: ([\w-]+)/))) return 'Vue ไม่รู้จักคอมโพเนนต์ ' + x[1] + ' — ลืม app.component(...) ก่อน mount หรือสะกดชื่อผิด';
+    if (/mount target selector/.test(s)) return 'หา element ที่จะ mount ไม่เจอ ตรวจว่า mount("#app") ตรงกับ <div id="app">';
+    if (/Unhandled error during execution/.test(s)) return 'เกิดข้อผิดพลาดในฟังก์ชันของ Vue ดูข้อความ error ด้านบน';
+    return 'คำเตือนจาก Vue ตรวจชื่อตัวแปรและคำสั่งในเทมเพลต';
+  }
+  if ((x = s.match(/(\S+) is not defined/))) return 'ไม่รู้จักชื่อ ' + x[1] + ' — สะกดผิด (ตัวพิมพ์เล็ก/ใหญ่ต่างกัน) ยังไม่ได้ประกาศด้วย let / const หรือลืมโหลดไลบรารี' + (x[1] === 'Vue' ? ' ให้ใส่ <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"><\/script> ก่อนสคริปต์ของเรา' : '');
+  if ((x = s.match(/Cannot (?:read|set) propert(?:y|ies) of (null|undefined)(?: \((?:reading|setting) '([^']+)'\))?/))) return 'ใช้ .' + (x[2] || '…') + ' กับค่าที่เป็น ' + x[1] + (x[1] === 'null' ? ' — มักเกิดจาก querySelector / getElementById หา element ไม่เจอ ตรวจ id / class ให้ตรงกัน หรือวาง <script> ไว้ท้าย <body>' : ' — ตัวแปรยังไม่มีค่า หรือสะกดชื่อ property ผิด');
+  if ((x = s.match(/([\w.$\[\]"']+) is not a function/))) return x[1] + ' ไม่ใช่ฟังก์ชัน — ตรวจการสะกดชื่อเมธอด (เช่น getElementById, addEventListener) หรือข้อมูลไม่ใช่ชนิดที่คิด (เช่น ใช้ .map กับค่าที่ไม่ใช่ array)';
+  if (/Assignment to constant variable/.test(s)) return 'ตัวแปร const เปลี่ยนค่าไม่ได้ ถ้าต้องเปลี่ยนค่าให้ประกาศด้วย let';
+  if ((x = s.match(/Identifier '([^']+)' has already been declared/))) return 'ประกาศชื่อ ' + x[1] + ' ซ้ำ ชื่อเดียวกันใช้ let / const ได้ครั้งเดียว';
+  if (/Unexpected end of input/.test(s)) return 'ปิดวงเล็บ { } หรือ ( ) ไม่ครบคู่';
+  if (/await is only valid/.test(s)) return 'ใช้ await ได้เฉพาะในฟังก์ชันที่มีคำว่า async นำหน้า';
+  if (/is not valid JSON|in JSON at position|JSON\.parse|Unexpected token '<'/.test(s)) return 'ข้อมูลที่ได้ไม่ใช่ JSON ตรวจลิงก์ API และใช้ JSON.stringify ตอนส่งข้อมูล';
+  if (/Unexpected token|Invalid or unexpected token|missing \) after|Unexpected identifier|Unexpected string|Unexpected number/.test(s)) return 'เขียนผิดรูปแบบ ตรวจเครื่องหมาย , ; ( ) { } และเครื่องหมายคำพูดในบรรทัดนี้หรือบรรทัดก่อนหน้า';
+  if (/Failed to fetch|NetworkError|Load failed/.test(s)) return 'เรียกข้อมูลไม่สำเร็จ ตรวจลิงก์ (ในตัวจำลองใช้ /api/ชื่อตาราง)';
+  if (m && m.name === 'CheckError') return 'ตรวจหน้าเว็บไม่ได้: ' + s;
+  if (m && m.name === 'Reloaded') return s;
+  if (/TypeError/.test(s)) return 'ใช้ข้อมูลผิดชนิดกับคำสั่งนี้';
+  return '';
+}
+
+/* ======================= วิดเจ็ตตัวจำลองเว็บ + หน้าจอมือถือ ======================= */
+/**
+ * WebSim(host, { code, starter, lang: 'html'|'js', live, onChange, extraTools:[{label, cls, onClick}], title, device })
+ * คืนค่า { editor, getCode, run, root }
+ */
+function WebSim(host, o) {
+  o = o || {};
+  var lang = o.lang === 'js' ? 'js' : 'html';
+  var state = { storage: {}, db: null, device: o.device || 'phone', live: o.live !== false && lang === 'html', ran: false };
+  var root = el('div', { class: 'wsim', 'data-view': 'code' });
+  var seg = el('div', { class: 'wsim-seg', role: 'tablist' });
+  var sCode = el('button', { type: 'button', class: 'on' }, '✏️ โค้ด'), sView = el('button', { type: 'button' }, lang === 'js' ? '🧾 ผลลัพธ์' : '📱 หน้าจอ');
+  seg.appendChild(sCode); seg.appendChild(sView);
+  var grid = el('div', { class: 'wsim-grid' });
+  var left = el('div', { class: 'wsim-code' });
+  var head = el('div', { class: 'wsim-head' });
+  head.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="fname">' + (lang === 'js' ? 'script.js' : 'index.html') + '</span>';
+  var keys = el('div', { class: 'keys', 'aria-label': 'แป้นสัญลักษณ์' });
+  var KEYS = lang === 'js' ? ['⇥', '(', ')', '{', '}', '[', ']', ';', '.', '=', '"', "'", '`', '$', '+', '<', '>', '!', '&', '|', ':', ','] : ['⇥', '<', '>', '/', '=', '"', "'", '{', '}', '(', ')', ';', ':', '.', '#', '-', '@', '`', '$', '!', '&', '[', ']'];
+  KEYS.forEach(function (k) { var b = el('button', { type: 'button', title: k === '⇥' ? 'ย่อหน้า' : k }, k); b.onclick = function () { editor.insert(k === '⇥' ? '  ' : k); }; keys.appendChild(b); });
+  var edHost = el('div', { class: 'ed' });
+  left.appendChild(head); left.appendChild(keys); left.appendChild(edHost);
+  var right = el('div', { class: 'wsim-view' });
+  var dev = el('div', { class: 'wsim-dev' });
+  var bPhone = el('button', { type: 'button', title: 'จอมือถือ 360px' }, '📱'), bDesk = el('button', { type: 'button', title: 'จอคอม 1024px' }, '💻');
+  var urlBar = el('span', { class: 'url' }, lang === 'js' ? 'Console' : 'sim.local');
+  if (lang === 'html') { dev.appendChild(bPhone); dev.appendChild(bDesk); }
+  dev.appendChild(urlBar);
+  var phone = el('div', { class: 'phone' + (lang === 'js' ? ' hidden' : '') });
+  var screen = el('div', { class: 'screen' });
+  var sbar = el('div', { class: 'sbar' }); sbar.innerHTML = '<b>9:41</b><span class="notch"></span><span>📶 🔋</span>';
+  var frame = el('iframe', { title: 'ผลลัพธ์ของโค้ด' });
+  screen.appendChild(frame); phone.appendChild(sbar); phone.appendChild(screen);
+  frame.addEventListener('load', function () {
+    if (++state.loads > 1) line('warn', '<span class="pf">⚠</span>หน้าเว็บถูกโหลดใหม่ (หน้าจอว่าง) <span class="th">💬 มักเกิดจากส่งฟอร์มโดยไม่ได้ใช้ e.preventDefault() หรือ @submit.prevent หรือกดลิงก์ที่ไม่ได้ขึ้นต้นด้วย # กด ▶ รัน เพื่อเริ่มใหม่</span>');
+  });
+  var con = el('div', { class: 'wcon', 'aria-live': 'polite' });
+  right.appendChild(dev); right.appendChild(phone); right.appendChild(con);
+  grid.appendChild(left); grid.appendChild(right);
+  var tools = el('div', { class: 'tools' });
+  var runBtn = el('button', { class: 'btn primary', type: 'button' }, '▶ รัน');
+  var liveLab = el('label', { class: 'live', title: 'แก้โค้ดแล้วหน้าจอเปลี่ยนตามทันที' });
+  var liveCb = el('input', { type: 'checkbox' }); liveCb.checked = state.live;
+  liveLab.appendChild(liveCb); liveLab.appendChild(document.createTextNode(' ⚡ สด'));
+  tools.appendChild(runBtn); if (lang === 'html') tools.appendChild(liveLab);
+  (o.extraTools || []).forEach(function (t) { var b = el('button', { class: 'btn ' + (t.cls || ''), type: 'button' }, t.label); b.onclick = function () { t.onClick(b); }; tools.appendChild(b); });
+  var dlBtn = el('button', { class: 'btn', type: 'button', title: 'ดาวน์โหลดเป็นไฟล์ไปเปิดในเครื่อง' }, '⬇');
+  var dbBtn = el('button', { class: 'btn', type: 'button', title: 'ล้างข้อมูลที่บันทึก (localStorage) และคืนฐานข้อมูลตัวอย่าง' }, '🗄');
+  var resetBtn = el('button', { class: 'btn', type: 'button', title: 'คืนค่าโค้ดตั้งต้น' }, '↺');
+  tools.appendChild(dlBtn); tools.appendChild(dbBtn); tools.appendChild(resetBtn);
+  root.appendChild(seg); root.appendChild(grid); root.appendChild(tools);
+  host.appendChild(root);
+
+  var editor = makeEditor(edHost, o.code || '', { mode: lang === 'js' ? 'javascript' : 'htmlmixed', onChange: function (v) { if (o.onChange) o.onChange(v); if (liveCb.checked && lang === 'html') liveRun(); } });
+  editor.refresh();
+  var starter = o.starter !== undefined ? o.starter : (o.code || '');
+  var liveTimer = null;
+  function liveRun() { clearTimeout(liveTimer); liveTimer = setTimeout(function () { run(true); }, 700); }
+
+  function line(cls, html) {
+    if (con.querySelector('.ph')) con.innerHTML = '';
+    var d = el('div', { class: 'ln ' + cls }); d.innerHTML = html; con.appendChild(d);
+    if (con.children.length > 200) con.removeChild(con.firstChild);
+    con.scrollTop = con.scrollHeight;
+  }
+  function onMsg(m) {
+    if (m.t === 'log') line(m.level, '<span class="pf">' + (m.level === 'warn' ? '⚠' : m.level === 'error' ? '✗' : '›') + '</span>' + esc(m.text) + (m.level !== 'log' && thaiJsError({ message: m.text }) ? '<span class="th">💬 ' + esc(thaiJsError({ message: m.text })) + '</span>' : ''));
+    else if (m.t === 'error') {
+      var th = thaiJsError(m);
+      line('error', '<span class="pf">✗</span>' + (m.line ? '<b>บรรทัด ' + m.line + ':</b> ' : '') + esc(m.message) + (th ? '<span class="th">💬 ' + esc(th) + '</span>' : ''));
+      if (m.line) editor.mark(m.line, 'cm-err-line');
+    }
+    else if (m.t === 'net') line('net', '<span class="pf">⇄</span>' + esc(m.method + ' ' + m.url) + ' <span class="st s' + String(m.status).charAt(0) + '">' + m.status + '</span>');
+    else if (m.t === 'storage') state.storage = m.data;
+    else if (m.t === 'db') state.db = m.data;
+    else if (m.t === 'ready') { if (m.title) urlBar.textContent = m.title; if (lang === 'js' && !con.querySelector('.ln')) con.innerHTML = '<div class="ph">(โปรแกรมทำงานเสร็จ แต่ไม่มี console.log)</div>'; }
+  }
+  function run(quiet) {
+    editor.clearMarks(); state.ran = true;
+    con.innerHTML = '<div class="ph">' + (lang === 'js' ? 'กำลังรัน…' : 'Console: console.log และ error จะแสดงที่นี่') + '</div>';
+    urlBar.textContent = lang === 'js' ? 'Console' : 'sim.local';
+    state.loads = 0;
+    WebRunner.mount(frame, editor.get(), { lang: lang, storage: state.storage, db: state.db || (state.db = WebRunner.freshDb()), onMsg: onMsg });
+    if (!quiet) setView('view');
+  }
+  function setView(v) { root.setAttribute('data-view', v); sCode.classList.toggle('on', v === 'code'); sView.classList.toggle('on', v === 'view'); if (v === 'code') editor.refresh(); fit(); }
+  sCode.onclick = function () { setView('code'); }; sView.onclick = function () { if (!state.ran) run(true); setView('view'); };
+  runBtn.onclick = function () { run(false); };
+  liveCb.onchange = function () { if (liveCb.checked) run(true); };
+  dlBtn.onclick = function () { downloadText(lang === 'js' ? 'script.js' : 'index.html', editor.get(), lang === 'js' ? 'text/javascript' : 'text/html'); };
+  dbBtn.onclick = function () { state.storage = {}; state.db = WebRunner.freshDb(); toast('ล้าง localStorage และคืนฐานข้อมูลตัวอย่างแล้ว', 'ok'); run(true); };
+  resetBtn.onclick = function () { if (confirm('คืนค่าโค้ดตั้งต้น? โค้ดที่แก้ไว้จะหายไป')) { editor.set(starter); editor.clearMarks(); run(true); } };
+  function setDevice(d) { state.device = d; bPhone.classList.toggle('on', d === 'phone'); bDesk.classList.toggle('on', d === 'desk'); phone.classList.toggle('desk', d === 'desk'); fit(); }
+  bPhone.onclick = function () { setDevice('phone'); }; bDesk.onclick = function () { setDevice('desk'); };
+  function fit() {
+    if (lang === 'js') return;
+    var avail = (right.clientWidth || 320) - 24 - (state.device === 'phone' ? 24 : 18);
+    var W = state.device === 'phone' ? 360 : 1024, Hh = state.device === 'phone' ? 680 : 640;
+    var s = Math.max(0.3, Math.min(1, avail / W));
+    frame.style.width = W + 'px'; frame.style.height = Hh + 'px'; frame.style.transform = 'scale(' + s + ')';
+    screen.style.width = Math.floor(W * s) + 'px'; screen.style.height = Math.floor(Hh * s) + 'px';
+  }
+  if (window.ResizeObserver) new ResizeObserver(function () { fit(); }).observe(right);
+  setDevice(state.device);
+  // รันอัตโนมัติเมื่อเลื่อนมาเห็น (ประหยัดเครื่องเมื่อหน้ามีตัวอย่างหลายอัน)
+  if (lang === 'html') {
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (es) { if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); if (!state.ran) run(true); } }, { rootMargin: '200px' });
+      io.observe(root);
+    } else run(true);
+  } else con.innerHTML = '<div class="ph">กด ▶ รัน เพื่อดูผลลัพธ์ใน Console</div>';
+  return {
+    editor: editor, root: root, runBtn: runBtn,
+    getCode: function () { return editor.get(); },
+    run: run, print: function (h) { con.innerHTML = h; }
+  };
+}
+</script>

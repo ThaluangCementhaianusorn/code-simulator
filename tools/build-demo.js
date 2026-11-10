@@ -20,6 +20,15 @@ shell = shell.replace('var BOOT = <?!= bootJson ?>;', [
   'window.addEventListener("hashchange", function () { location.reload(); });'
 ].join('\n'));
 if (/<\?/.test(shell)) throw new Error('ยังมี scriptlet ของ Apps Script หลงเหลือ');
+// ตรวจไวยากรณ์ทุก <script> แบบเดียวกับที่เบราว์เซอร์แบ่ง (เนื้อหาจบที่ </script ตัวแรก)
+(function checkScripts(s) {
+  let pos = 0, i, n = 0;
+  while ((i = s.indexOf('<script', pos)) >= 0) {
+    const gt = s.indexOf('>', i), end = s.indexOf('</script', gt), tag = s.slice(i, gt + 1); pos = end + 9; n++;
+    if (/\bsrc=|type="text\/python"/.test(tag)) continue;
+    try { new Function(s.slice(gt + 1, end)); } catch (e) { throw new Error('<script> ที่ ' + n + ' ผิดไวยากรณ์: ' + e.message + ' → ' + JSON.stringify(s.slice(gt + 1, gt + 120))); }
+  }
+})(shell);
 
 const backend = [
   fs.readFileSync(path.join(__dirname, 'memstore.js'), 'utf8').replace(/if \(typeof module[^\n]*\n/, ''),
@@ -28,7 +37,7 @@ const backend = [
   src('Content2.gs'),
   `var DemoBackend = null;
 if (!(window.CS_CONFIG && window.CS_CONFIG.apiUrl)) DemoBackend = (function () {
-  var KEY = 'cs_demo_db_v2', db = null, timer = null;
+  var KEY = 'cs_demo_db_v3', db = null, timer = null;
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
   var fresh = !db;
   var st = makeMemStore(db || {}, {
@@ -50,7 +59,7 @@ if (!(window.CS_CONFIG && window.CS_CONFIG.apiUrl)) DemoBackend = (function () {
 })();`
 ].join('\n;\n').replace(/<\/script/gi, '<\\/script');
 
-const inject = (html, head) => html.replace('<body>', '<body>\n' + head + '<script>\n' + backend + '\n</script>');
+const inject = (html, head) => html.replace('<body>', () => '<body>\n' + head + '<script>\n' + backend + '\n</script>');
 
 fs.mkdirSync(path.join(root, 'dist', 'web'), { recursive: true });
 // เว็บสาธิต: ไม่อ่าน config.js

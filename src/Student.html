@@ -12,7 +12,7 @@ var StudentApp = (function () {
     top = el('header', { class: 'topbar' });
     view = el('main', { class: 'wrap', id: 'view' });
     nav = el('nav', { class: 'bottomnav hidden' });
-    [['home', '🎯', 'ภารกิจ'], ['scores', '📊', 'คะแนน'], ['certs', '🏆', 'เกียรติบัตร'], ['logout', '🚪', 'ออก']].forEach(function (n) {
+    [['home', '🎯', 'ภารกิจ'], ['gallery', '📱', 'ตัวอย่าง'], ['scores', '📊', 'คะแนน'], ['certs', '🏆', 'เกียรติบัตร'], ['logout', '🚪', 'ออก']].forEach(function (n) {
       var b = el('button', { type: 'button', 'data-k': n[0] }); b.innerHTML = '<span class="i">' + n[1] + '</span>' + n[2];
       b.onclick = function () { if (n[0] === 'logout') logout(); else go(n[0], {}, true); };
       nav.appendChild(b);
@@ -40,12 +40,16 @@ var StudentApp = (function () {
     cur = { name: name, params: params || {} };
     render();
   }
-  function goBack() { cur = st.history.pop() || { name: 'home', params: {} }; render(); }
+  function goBack() {
+    if (!Api.token && !st.history.length) { showLogin(); return; }
+    cur = st.history.pop() || { name: 'home', params: {} }; render();
+  }
   function render() {
     window.scrollTo(0, 0);
+    view.classList.toggle('wide', cur.name === 'act' || cur.name === 'show');
     if (window.__quizTimer) { clearInterval(window.__quizTimer); window.__quizTimer = null; }
     view.innerHTML = '<div class="empty"><span class="spin" style="display:inline-block;width:28px;height:28px;border:3px solid var(--primary);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></span></div>';
-    var f = { home: vHome, unit: vUnit, act: vActivity, scores: vScores, certs: vCerts, cert: vCert }[cur.name] || vHome;
+    var f = { home: vHome, unit: vUnit, act: vActivity, scores: vScores, certs: vCerts, cert: vCert, gallery: vGallery, show: vShow }[cur.name] || vHome;
     Promise.resolve().then(function () { return f(cur.params); }).catch(function (e) {
       view.innerHTML = ''; var c = el('div', { class: 'card empty' }); c.innerHTML = '<span class="i">⚠️</span>' + esc(e.message);
       var b = el('button', { class: 'btn', style: 'margin-top:12px' }, 'ลองใหม่'); b.onclick = render; c.appendChild(el('br')); c.appendChild(b); view.appendChild(c);
@@ -54,12 +58,40 @@ var StudentApp = (function () {
   function loadMap() { return Api.call('courseMap').then(function (m) { st.map = m; st.me = m.student; return m; }); }
 
   /* ---------------- เข้าสู่ระบบ ---------------- */
+  /** ข้อความหน่วยกิต 2-3-3 → "3 หน่วยกิต · ทฤษฎี 2 ชม. · ปฏิบัติ 3 ชม./สัปดาห์" */
+  function creditText(s) {
+    var m = String(s || '').match(/^(\d+)-(\d+)-(\d+)$/);
+    return m ? m[3] + ' หน่วยกิต · ทฤษฎี ' + m[1] + ' ชม. · ปฏิบัติ ' + m[2] + ' ชม./สัปดาห์' : String(s || '');
+  }
+  function courseHero(info, compact) {
+    var h = el('section', { class: 'land-hero' + (compact ? ' compact' : '') });
+    h.innerHTML = '<div class="land-in"><div class="land-tags">' + (info.courseCode ? '<span>รหัสวิชา ' + esc(info.courseCode) + '</span>' : '') + (info.courseCredit ? '<span>' + esc(creditText(info.courseCredit)) + '</span>' : '') + '</div>' +
+      '<h1>' + esc(info.courseName) + '</h1>' +
+      (compact ? '' : '<p>' + esc(info.courseDescription || '') + '</p>') +
+      '<div class="land-stack"><span>HTML5</span><span>CSS3</span><span>JavaScript</span><span>Vue 3</span><span>Bootstrap 5</span><span>REST API</span><span>Deploy</span></div></div>' +
+      '<div class="land-phone" aria-hidden="true"><div class="lp-screen"><div class="lp-bar"></div><div class="lp-card"><i></i><i></i></div><div class="lp-grid"><b></b><b></b><b></b><b></b></div><div class="lp-code">&lt;div id="app"&gt;<br>&nbsp;{{ message }}<br>&lt;/div&gt;</div></div></div>';
+    return h;
+  }
+  function outlineCard(info) {
+    var c = el('div', { class: 'card' });
+    c.innerHTML = '<h2>🧭 สร้างเว็บแอปพลิเคชัน ต้องเรียนอะไรบ้าง</h2><p class="small muted">10 ภารกิจ แต่ละภารกิจมี 📖 ใบความรู้ → 📝 ใบงาน → 💻 แบบฝึกปฏิบัติ → ✅ แบบทดสอบ ผ่านแล้วได้เกียรติบัตรทันที</p>';
+    var ol = el('div', { class: 'outline' });
+    (info.outline || []).forEach(function (u) {
+      var d = el('div', { class: 'ol-item' });
+      d.innerHTML = '<span class="ol-no">' + u.no + '</span><span class="ol-ic">' + esc(u.icon) + '</span><div><b>' + esc(u.title) + '</b><div class="small muted">' + esc(u.summary || '') + '</div></div>';
+      ol.appendChild(d);
+    });
+    c.appendChild(ol);
+    return c;
+  }
   function showLogin() {
     st.me = null; cur = null; setNav(null);
     setTop(st.info.courseName, st.info.schoolName);
     view.innerHTML = '';
-    var c = el('div', { class: 'card', style: 'max-width:440px;margin:24px auto' });
-    c.innerHTML = '<div class="center"><div style="font-size:3rem">🧑‍💻</div><h1>ห้องเรียนเขียนโปรแกรม</h1><p class="muted">ฝึกเขียนคำสั่ง รันได้ทันที ทำภารกิจให้ครบเพื่อรับเกียรติบัตร</p></div>';
+    view.appendChild(courseHero(st.info));
+    var cols = el('div', { class: 'land-cols' });
+    var c = el('div', { class: 'card login-card' });
+    c.innerHTML = '<div class="center"><div style="font-size:2.6rem">🧑‍💻</div><h2 style="margin:.2em 0">เข้าสู่ห้องเรียน</h2><p class="muted small">เขียนโค้ด ดูผลบนหน้าจอมือถือทันที ทำภารกิจให้ครบเพื่อรับเกียรติบัตร</p></div>';
     var f = el('form');
     f.innerHTML = '<label class="f" for="lc">รหัสนักศึกษา</label><input class="in" id="lc" inputmode="numeric" autocomplete="username" required>' +
       '<label class="f" for="lp">PIN (รับจากครูผู้สอน)</label><input class="in" id="lp" type="password" inputmode="numeric" autocomplete="current-password" required>';
@@ -77,8 +109,11 @@ var StudentApp = (function () {
     var last = store('cs_last_code'); if (last) $('#lc', f).value = last;
     $('#lc', f).addEventListener('change', function () { store('cs_last_code', this.value); });
     if (Api.mode() === 'demo') c.appendChild(demoHint());
-    view.appendChild(c);
-    PyRunner.warm();
+    var gb = el('button', { class: 'btn block', type: 'button', style: 'margin-top:10px' }, '📱 ดูระบบตัวอย่าง 10 ระบบ (เปิดดูได้ทันที)');
+    gb.onclick = function () { go('gallery', {}, true); };
+    c.appendChild(gb);
+    cols.appendChild(c); cols.appendChild(outlineCard(st.info));
+    view.appendChild(cols);
   }
   function demoHint() {
     var d = el('div', { class: 'card flat', style: 'margin:16px 0 0;background:var(--wait-soft)' });
@@ -98,11 +133,15 @@ var StudentApp = (function () {
       setTop(m.settings.courseName, m.settings.schoolName); setNav('home');
       view.innerHTML = '';
       var passed = m.units.filter(function (u) { return u.passed; }).length;
-      var hero = el('div', { class: 'card hero' });
+      var hero = el('div', { class: 'card hero hero-grad' });
       hero.innerHTML = '<div class="ring" style="--p:' + m.overall.percent + '"><span>' + Math.round(m.overall.percent) + '%</span></div>' +
-        '<div class="grow"><div class="muted small">สวัสดี</div><h1 style="margin:0">' + esc(m.student.firstName) + ' 👋</h1>' +
+        '<div class="grow"><div class="small" style="opacity:.85">' + esc((st.info.courseCode ? st.info.courseCode + ' · ' : '') + m.settings.courseName) + '</div><h1 style="margin:0">สวัสดี ' + esc(m.student.firstName) + ' 👋</h1>' +
         '<div class="small">ผ่านแล้ว <b>' + passed + '/' + m.units.length + '</b> ภารกิจ · เกียรติบัตร <b>' + m.certificates.length + '</b> ใบ</div></div>';
       view.appendChild(hero);
+      var sc = el('button', { class: 'card showcase-cta', type: 'button' });
+      sc.innerHTML = '<span class="i">📱</span><span class="grow"><b>ระบบตัวอย่าง 10 ระบบ</b><br><span class="small muted">เปิดโค้ดจริง แก้ แล้วดูผลบนหน้าจอมือถือ</span></span><span>›</span>';
+      sc.onclick = function () { go('gallery', {}, true); };
+      view.appendChild(sc);
       var next = nextStep(m);
       if (next) {
         var nb = el('button', { class: 'btn primary block', style: 'margin-bottom:14px' }); nb.innerHTML = '▶ เรียนต่อ: ' + esc(next.act.title);
@@ -120,8 +159,39 @@ var StudentApp = (function () {
         c.onkeydown = function (e) { if (e.key === 'Enter') c.onclick(); };
         view.appendChild(c);
       });
-      PyRunner.warm();
     });
+  }
+
+  /* ---------------- ระบบตัวอย่าง 10 ระบบ ---------------- */
+  function vGallery() {
+    setTop('📱 ระบบตัวอย่าง 10 ระบบ', 'แตะเพื่อเปิดโค้ดและดูผลบนหน้าจอมือถือ', !st.me); setNav(st.me ? 'gallery' : null);
+    view.innerHTML = '';
+    var intro = el('div', { class: 'card flat', style: 'background:var(--primary-soft)' });
+    intro.innerHTML = 'ระบบตัวอย่างแต่ละระบบใช้ความรู้จากภารกิจที่ระบุ เปิดแล้ว<b>แก้โค้ดได้ทันที</b> หน้าจอเปลี่ยนตาม กด ⬇ เพื่อดาวน์โหลดเป็นไฟล์ <code>index.html</code> ไปต่อยอดหรืออัปโหลดขึ้นเว็บ';
+    view.appendChild(intro);
+    var g = el('div', { class: 'sc-grid' });
+    SHOWCASE.forEach(function (s) {
+      var c = el('button', { class: 'sc-card', type: 'button' });
+      c.innerHTML = '<div class="sc-ic">' + esc(s.icon) + '</div><div class="sc-no">ระบบที่ ' + s.no + ' · ภารกิจที่ ' + s.unit + '</div><b>' + esc(s.name) + '</b><p>' + esc(s.desc) + '</p><div class="sc-tags">' + s.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>';
+      c.onclick = function () { go('show', { no: s.no }); };
+      g.appendChild(c);
+    });
+    view.appendChild(g);
+  }
+  function vShow(p) {
+    var s = SHOWCASE.filter(function (x) { return x.no === p.no; })[0];
+    if (!s) throw new Error('ไม่พบระบบตัวอย่าง');
+    setTop(s.icon + ' ' + s.name, 'ระบบตัวอย่างที่ ' + s.no + ' · ใช้ความรู้ภารกิจที่ ' + s.unit, true); setNav(null);
+    view.innerHTML = '';
+    view.classList.add('wide');
+    var c = el('div', { class: 'card' });
+    c.innerHTML = '<p style="margin-top:0">' + esc(s.desc) + '</p><div class="sc-tags">' + s.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>';
+    WebSim(c, { code: s.code, starter: s.code, lang: 'html' });
+    view.appendChild(c);
+    var nav2 = el('div', { class: 'row' });
+    if (s.no > 1) { var pb = el('button', { class: 'btn grow' }, '‹ ระบบที่ ' + (s.no - 1)); pb.onclick = function () { cur = { name: 'show', params: { no: s.no - 1 } }; render(); }; nav2.appendChild(pb); }
+    if (s.no < SHOWCASE.length) { var nb = el('button', { class: 'btn primary grow' }, 'ระบบที่ ' + (s.no + 1) + ' ›'); nb.onclick = function () { cur = { name: 'show', params: { no: s.no + 1 } }; render(); }; nav2.appendChild(nb); }
+    view.appendChild(nav2);
   }
   function nextStep(m) {
     for (var i = 0; i < m.units.length; i++) {
@@ -182,7 +252,9 @@ var StudentApp = (function () {
   }
 
   function codeBlockRunner(lang, code, flags) {
-    if (lang !== 'python' || /norun/.test(flags)) return null;
+    if (/norun/.test(flags)) return null;
+    if (lang === 'html' || lang === 'js' || lang === 'vue') { var wh = el('div'); WebSim(wh, { code: code, starter: code, lang: lang === 'js' ? 'js' : 'html' }); return wh; }
+    if (lang !== 'python') return null;
     var host = el('div');
     var needsInput = /input\(/.test(code);
     Sim(host, { code: code, starter: code, showStdin: needsInput, stdin: needsInput ? '' : '' });
@@ -217,7 +289,13 @@ var StudentApp = (function () {
       c.innerHTML = '<div class="row"><h2 style="margin:0" class="grow">' + esc(t.title) + '</h2><span class="chip pri">' + fmt(t.max) + ' คะแนน</span></div>';
       c.appendChild(mdRender(t.prompt));
       var vis = t.tests.filter(function (x) { return !x.hidden; }), hid = t.tests.length - vis.length;
-      if (vis.length) {
+      if (isWeb(t)) {
+        var ck = el('ul', { class: 'checklist' });
+        vis.forEach(function (x) { ck.appendChild(el('li', { 'data-s': '' }, x.label || 'ชุดตรวจ')); });
+        if (hid) ck.appendChild(el('li', { class: 'muted', 'data-s': '🔒' }, 'และมีรายการตรวจที่ซ่อนไว้อีก ' + hid + ' รายการ ใช้ตอนส่งงาน'));
+        c.appendChild(el('div', { class: 'small muted', style: 'margin-top:8px' }, 'ระบบจะตรวจหน้าเว็บของคุณตามรายการนี้'));
+        c.appendChild(ck);
+      } else if (vis.length) {
         var tb = '<table class="tests"><tr><th>ตัวอย่าง</th><th>ข้อมูลนำเข้า</th><th>ผลลัพธ์ที่ต้องได้</th></tr>';
         vis.forEach(function (x, k) { tb += '<tr><td>' + (k + 1) + '</td><td><pre>' + (esc(x.input) || '<span class="muted">-</span>') + '</pre></td><td><pre>' + esc(x.expected) + '</pre></td></tr>'; });
         tb += '</table>' + (hid ? '<div class="small muted">และมีชุดทดสอบที่ซ่อนไว้อีก ' + hid + ' ชุด ใช้ตอนส่งงาน</div>' : '');
@@ -228,7 +306,11 @@ var StudentApp = (function () {
       var hintBox = el('ul', { class: 'hints' });
       (t.hints || []).forEach(function (hh, k) { hintBox.appendChild(el('li', {}, '💡 คำใบ้ ' + (k + 1) + ': ' + hh)); });
       var checkOut = el('div');
-      var sim = Sim(c, {
+      var tools = [
+        { label: '🧪 ตรวจกับตัวอย่าง', onClick: function (btn) { btn.dataset.busy = 'กำลังตรวจ…'; withBusy(btn, function () { return checkVisible(sim, t, checkOut); }).catch(function () {}); } },
+        { label: '💡 คำใบ้ (' + (t.hintCount - t.hints.length) + ')', onClick: function (btn) { askHint(a, i, t, hintBox, btn); } }
+      ];
+      var sim = isWeb(t) ? WebSim(c, { code: code, starter: t.starterCode, lang: t.lang === 'js' ? 'js' : 'html', onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600), extraTools: tools }) : Sim(c, {
         code: code, starter: t.starterCode, showStdin: !!t.sampleInput || /input\(/.test(t.starterCode), stdin: t.sampleInput || (vis[0] ? vis[0].input : ''),
         onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600),
         extraTools: [
@@ -252,12 +334,31 @@ var StudentApp = (function () {
       });
     };
     foot.appendChild(info); foot.appendChild(sb); view.appendChild(foot);
-    PyRunner.warm();
+    if (a.tasks.some(function (t) { return !isWeb(t); })) PyRunner.warm();
+  }
+
+  function isWeb(t) { return t.lang !== 'python'; }
+  /** รันชุดตรวจตามภาษาของโจทย์ */
+  function runTests(t, code, list) {
+    return isWeb(t) ? WebRunner.tests(code, list, { lang: t.lang === 'js' ? 'js' : 'html' }) : PyRunner.tests(code, list.map(function (x) { return x.input; }));
   }
 
   function checkVisible(sim, t, out) {
     var vis = t.tests.filter(function (x) { return !x.hidden; });
     if (!vis.length) { out.innerHTML = '<p class="small muted">ข้อนี้ไม่มีตัวอย่างให้ตรวจ ใช้ ▶ รัน แล้วเทียบกับโจทย์</p>'; return Promise.resolve(); }
+    if (isWeb(t)) {
+      return runTests(t, sim.getCode(), vis).then(function (rs) {
+        var pass = 0, h = '<ul class="checklist done">';
+        rs.forEach(function (r, k) {
+          var ok = !r.error && !r.timeout && cmpOut(r.output, vis[k].expected, vis[k].compare); if (ok) pass++;
+          var why = r.error ? thaiJsError(r.error) || r.error.message : 'ต้องได้ ' + vis[k].expected + ' แต่หน้าเว็บได้ ' + (r.output === '' ? '(ว่าง)' : r.output);
+          h += '<li data-s="' + (ok ? '✅' : '❌') + '">' + esc(vis[k].label || ('ชุดที่ ' + (k + 1))) + (ok ? '' : '<div class="small muted">' + esc(why) + '</div>') + '</li>';
+        });
+        var errs = []; rs.forEach(function (r) { (r.errors || []).forEach(function (e) { if (e.kind !== 'resource' && errs.length < 2) errs.push((e.line ? 'บรรทัด ' + e.line + ': ' : '') + (thaiJsError(e) || e.message)); }); });
+        out.innerHTML = '<p><b class="' + (pass === rs.length ? 'pass' : 'fail') + '">ผ่าน ' + pass + '/' + rs.length + ' รายการ</b>' + (pass === rs.length ? ' — เยี่ยม! ส่งงานได้เลย (ยังมีรายการตรวจที่ซ่อนอยู่)' : ' — แก้ตามรายการที่ยังไม่ผ่าน') + '</p>' + h + '</ul>' +
+          (errs.length ? '<div class="small" style="color:var(--bad)">⚠️ ' + errs.map(esc).join('<br>') + '</div>' : '');
+      });
+    }
     return PyRunner.tests(sim.getCode(), vis.map(function (x) { return x.input; })).then(function (rs) {
       var pass = 0, h = '<table class="tests"><tr><th></th><th>ข้อมูลนำเข้า</th><th>ต้องได้</th><th>โปรแกรมได้</th></tr>';
       rs.forEach(function (r, k) {
@@ -283,7 +384,7 @@ var StudentApp = (function () {
   function submitTasks(a, sims) {
     var jobs = a.tasks.map(function (t, i) {
       var code = sims[i].getCode();
-      return function () { return PyRunner.tests(code, t.tests.map(function (x) { return x.input; })).then(function (rs) { return { code: code, outputs: rs.map(function (r) { return r.timeout ? '⏱TIMEOUT' : (r.output || '') + (r.error ? '\n[' + r.error.type + ']' : ''); }) }; }); };
+      return function () { return runTests(t, code, t.tests).then(function (rs) { return { code: code, outputs: rs.map(function (r) { return r.timeout ? '⏱TIMEOUT' : (r.output || '') + (r.error ? '\n[' + (r.error.type || r.error.name || 'Error') + ']' : ''); }) }; }); };
     });
     var results = [];
     return jobs.reduce(function (p, j) { return p.then(j).then(function (r) { results.push(r); }); }, Promise.resolve()).then(function () {
@@ -306,7 +407,11 @@ var StudentApp = (function () {
         t.results.forEach(function (x, k) { hh += '<span class="chip ' + (x.pass ? 'ok' : 'bad') + '" style="margin:2px">' + (x.pass ? '✓' : '✗') + ' ชุด ' + (k + 1) + (x.hidden ? ' (ซ่อน)' : '') + '</span>'; });
         hh += '</div>';
         var bad = t.results.filter(function (x) { return !x.pass && !x.hidden; })[0];
-        if (bad) hh += '<div class="small" style="margin-top:6px">ตัวอย่างที่ยังไม่ผ่าน — ต้องได้:<pre class="code">' + esc(bad.expected) + '</pre>โปรแกรมได้:<pre class="code">' + esc(bad.actual || '') + '</pre></div>';
+        var tk = a.tasks[i];
+        if (isWeb(tk)) {
+          var fails = t.results.map(function (x, k) { return !x.pass ? (x.hidden ? '🔒 รายการที่ซ่อน' : (tk.tests[k] && tk.tests[k].label) || ('ชุด ' + (k + 1))) : null; }).filter(Boolean);
+          if (fails.length) hh += '<div class="small" style="margin-top:6px">ยังไม่ผ่าน: ' + fails.map(esc).join(' · ') + '</div>';
+        } else if (bad) hh += '<div class="small" style="margin-top:6px">ตัวอย่างที่ยังไม่ผ่าน — ต้องได้:<pre class="code">' + esc(bad.expected) + '</pre>โปรแกรมได้:<pre class="code">' + esc(bad.actual || '') + '</pre></div>';
         else if (t.results.some(function (x) { return !x.pass; })) hh += '<div class="small muted" style="margin-top:6px">ไม่ผ่านชุดทดสอบที่ซ่อน ลองคิดกรณีพิเศษ เช่น 0 ค่าติดลบ หรือข้อมูลเพียงค่าเดียว</div>';
         d.innerHTML = hh; m.appendChild(d);
       });

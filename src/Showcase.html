@@ -1,0 +1,616 @@
+<!-- Showcase.html — ระบบตัวอย่าง 10 ระบบ (โค้ดเต็ม รันบนหน้าจอมือถือจำลองได้) โค้ดเก็บใน <textarea> จึงมี </script> ได้ -->
+<div id="showcase-src" hidden>
+<textarea data-no="1" data-icon="🪪" data-unit="1" data-name="นามบัตรดิจิทัล" data-tags="HTML5,CSS3" data-desc="หน้าโปรไฟล์ส่วนตัวพร้อมช่องทางติดต่อและทักษะ ใช้ Semantic Tag, Flexbox และ CSS Variables">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>นามบัตรดิจิทัล</title>
+  <style>
+    :root { --brand: #4f46e5; --brand2: #ec4899; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f1f5f9; color: #0f172a; }
+    header { height: 150px; background: linear-gradient(135deg, var(--brand), var(--brand2)); }
+    main { margin: -70px 16px 16px; background: white; border-radius: 24px; padding: 20px; text-align: center; box-shadow: 0 10px 30px rgba(15,23,42,.12); }
+    .avatar { width: 110px; height: 110px; border-radius: 50%; margin: -75px auto 8px; display: grid; place-items: center; font-size: 56px; background: #fef3c7; border: 5px solid white; }
+    h1 { margin: 6px 0 0; font-size: 24px; }
+    .role { color: #64748b; margin: 4px 0 16px; }
+    .contact { display: flex; gap: 8px; justify-content: center; }
+    .contact a { flex: 1; text-decoration: none; padding: 10px; border-radius: 14px; background: #eef2ff; color: var(--brand); font-weight: 600; }
+    h2 { font-size: 16px; text-align: left; margin: 20px 0 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips span { padding: 6px 12px; border-radius: 999px; background: #f1f5f9; font-size: 14px; }
+    .stat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+    .stat div { background: #f8fafc; border-radius: 14px; padding: 10px; } .stat b { display: block; font-size: 20px; color: var(--brand); }
+    footer { text-align: center; color: #94a3b8; font-size: 13px; padding-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <header></header>
+  <main>
+    <div class="avatar">🧑‍💻</div>
+    <h1>สมชาย ใจดี</h1>
+    <p class="role">นักพัฒนาเว็บแอปพลิเคชัน · ปวส. เทคโนโลยีสารสนเทศ</p>
+    <nav class="contact">
+      <a href="tel:0812345678">📞 โทร</a>
+      <a href="mailto:somchai@example.com">✉️ อีเมล</a>
+      <a href="#">💬 LINE</a>
+    </nav>
+    <section class="stat">
+      <div><b>12</b>ผลงาน</div><div><b>3.65</b>เกรดเฉลี่ย</div><div><b>2</b>รางวัล</div>
+    </section>
+    <h2>ทักษะ</h2>
+    <div class="chips"><span>HTML5</span><span>CSS3</span><span>JavaScript</span><span>Vue 3</span><span>Bootstrap</span><span>Google Sheets API</span></div>
+    <h2>เกี่ยวกับฉัน</h2>
+    <p style="text-align:left;color:#475569">ชอบสร้างเว็บแอปที่ช่วยแก้ปัญหาในวิทยาลัย เช่น ระบบจองห้องและระบบแจ้งซ่อม</p>
+  </main>
+  <footer>© 2569 สมชาย ใจดี</footer>
+</body>
+</html>
+</textarea>
+<textarea data-no="2" data-icon="☕" data-unit="2" data-name="เมนูร้านกาแฟ Responsive" data-tags="CSS Grid,Flexbox,Media Query" data-desc="เมนูร้านที่มือถือแสดง 2 คอลัมน์ จอคอมแสดง 4 คอลัมน์ (กด 💻 ดู) พร้อมแถบหมวดเลื่อนแนวนอน">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Café IT</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #fffbf5; color: #3b2a1a; }
+    .hero { padding: 28px 16px 20px; background: linear-gradient(160deg, #78350f, #b45309); color: #fff7ed; border-radius: 0 0 28px 28px; }
+    .hero h1 { margin: 0; font-size: 28px; } .hero p { margin: 6px 0 0; opacity: .85; }
+    .cats { display: flex; gap: 8px; overflow-x: auto; padding: 14px 16px; }
+    .cats span { flex: none; padding: 8px 16px; border-radius: 999px; background: #fef3c7; font-weight: 600; font-size: 14px; }
+    .cats span.on { background: #78350f; color: white; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 0 16px 20px; }
+    .card { background: white; border-radius: 20px; padding: 12px; box-shadow: 0 4px 14px rgba(120,53,15,.1); }
+    .pic { aspect-ratio: 1; border-radius: 14px; display: grid; place-items: center; font-size: 52px; background: #fef3c7; }
+    .card h3 { font-size: 15px; margin: 10px 0 2px; }
+    .row { display: flex; justify-content: space-between; align-items: center; }
+    .price { color: #b45309; font-weight: 800; }
+    .add { width: 32px; height: 32px; border-radius: 50%; border: 0; background: #78350f; color: white; font-size: 18px; }
+    .tag { font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 999px; }
+    @media (min-width: 768px) {
+      .grid { grid-template-columns: repeat(4, 1fr); max-width: 1000px; margin: auto; }
+      .hero { text-align: center; padding: 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>☕ Café IT</h1>
+    <p>ร้านกาแฟของนักศึกษา · เปิด 7:00–17:00</p>
+  </header>
+  <nav class="cats"><span class="on">ทั้งหมด</span><span>กาแฟ</span><span>ชา</span><span>เบเกอรี่</span><span>อาหาร</span></nav>
+  <main class="grid">
+    <article class="card"><div class="pic">☕</div><h3>กาแฟเย็น</h3><div class="row"><span class="price">45 ฿</span><button class="add">+</button></div></article>
+    <article class="card"><div class="pic">🍵</div><h3>ชาเขียวนม <span class="tag">ใหม่</span></h3><div class="row"><span class="price">40 ฿</span><button class="add">+</button></div></article>
+    <article class="card"><div class="pic">🥐</div><h3>ครัวซองต์</h3><div class="row"><span class="price">35 ฿</span><button class="add">+</button></div></article>
+    <article class="card"><div class="pic">🍰</div><h3>เค้กช็อกโกแลต</h3><div class="row"><span class="price">65 ฿</span><button class="add">+</button></div></article>
+    <article class="card"><div class="pic">🍊</div><h3>น้ำส้มคั้น</h3><div class="row"><span class="price">30 ฿</span><button class="add">+</button></div></article>
+    <article class="card"><div class="pic">🥪</div><h3>แซนด์วิชทูน่า</h3><div class="row"><span class="price">55 ฿</span><button class="add">+</button></div></article>
+  </main>
+</body>
+</html>
+</textarea>
+<textarea data-no="3" data-icon="⚖️" data-unit="3" data-name="เครื่องคำนวณ BMI" data-tags="JavaScript,DOM,Event" data-desc="รับน้ำหนักและส่วนสูง คำนวณดัชนีมวลกายทันทีที่พิมพ์ แสดงผลเป็นสีและแถบเกจ">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMI</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px 16px; font-family: system-ui, sans-serif; background: linear-gradient(180deg, #ecfeff, #f8fafc); min-height: 100vh; }
+    h1 { margin: 0 0 4px; } p.sub { color: #64748b; margin: 0 0 18px; }
+    .box { background: white; border-radius: 20px; padding: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.06); margin-bottom: 14px; }
+    label { font-weight: 600; display: flex; justify-content: space-between; }
+    input[type=range] { width: 100%; accent-color: #0891b2; margin: 8px 0 16px; }
+    .res { text-align: center; }
+    .num { font-size: 56px; font-weight: 800; }
+    .lv { display: inline-block; padding: 6px 16px; border-radius: 999px; color: white; font-weight: 700; }
+    .gauge { position: relative; height: 12px; border-radius: 99px; margin: 18px 0 6px; background: linear-gradient(90deg, #60a5fa 0 20%, #22c55e 20% 45%, #f59e0b 45% 60%, #ef4444 60%); }
+    .pin { position: absolute; top: -6px; width: 4px; height: 24px; background: #0f172a; border-radius: 2px; transition: left .3s; }
+    .scale { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <h1>⚖️ คำนวณ BMI</h1>
+  <p class="sub">เลื่อนหรือพิมพ์ค่า ผลจะคำนวณทันที</p>
+  <div class="box">
+    <label>น้ำหนัก <span><b id="wv">60</b> กก.</span></label>
+    <input id="w" type="range" min="30" max="150" value="60">
+    <label>ส่วนสูง <span><b id="hv">165</b> ซม.</span></label>
+    <input id="h" type="range" min="120" max="210" value="165">
+  </div>
+  <div class="box res">
+    <div class="num" id="bmi">0</div>
+    <span class="lv" id="lv">-</span>
+    <div class="gauge"><div class="pin" id="pin"></div></div>
+    <div class="scale"><span>15</span><span>18.5</span><span>23</span><span>25</span><span>35</span></div>
+    <p id="tip"></p>
+  </div>
+  <script>
+    const w = document.querySelector("#w"), h = document.querySelector("#h");
+    const levels = [
+      { max: 18.5, name: "ผอม", color: "#3b82f6", tip: "ควรรับประทานอาหารให้ครบ 5 หมู่" },
+      { max: 23, name: "สมส่วน", color: "#16a34a", tip: "ยอดเยี่ยม! รักษาสุขภาพแบบนี้ต่อไป" },
+      { max: 25, name: "ท้วม", color: "#f59e0b", tip: "เพิ่มการออกกำลังกายวันละ 30 นาที" },
+      { max: 99, name: "อ้วน", color: "#ef4444", tip: "ควรควบคุมอาหารและปรึกษาผู้เชี่ยวชาญ" }
+    ];
+    function calc() {
+      const kg = Number(w.value), m = Number(h.value) / 100;
+      const bmi = kg / (m * m);
+      const lv = levels.find(l => bmi < l.max);
+      document.querySelector("#wv").textContent = kg;
+      document.querySelector("#hv").textContent = h.value;
+      document.querySelector("#bmi").textContent = bmi.toFixed(2);
+      const badge = document.querySelector("#lv");
+      badge.textContent = lv.name; badge.style.background = lv.color;
+      document.querySelector("#tip").textContent = lv.tip;
+      const pct = Math.min(100, Math.max(0, (bmi - 15) / 20 * 100));
+      document.querySelector("#pin").style.left = pct + "%";
+    }
+    w.addEventListener("input", calc);
+    h.addEventListener("input", calc);
+    calc();
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="4" data-icon="🎫" data-unit="4" data-name="ระบบเรียกคิว" data-tags="Vue 3,Reactive,computed" data-desc="รับบัตรคิว เรียกคิวถัดไปตามช่องบริการ และแสดงประวัติการเรียก ข้อมูลเปลี่ยน หน้าจอเปลี่ยนตามเอง">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ระบบเรียกคิว</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: white; }
+    #app { padding: 18px 16px; }
+    .now { text-align: center; padding: 22px; border-radius: 24px; background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .now small { opacity: .8; } .num { font-size: 72px; font-weight: 900; letter-spacing: 2px; }
+    .counter { display: inline-block; background: rgba(255,255,255,.2); padding: 4px 14px; border-radius: 999px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+    .stats div { background: #1e293b; border-radius: 16px; padding: 12px; text-align: center; } .stats b { font-size: 26px; display: block; }
+    .busy { color: #f87171; }
+    select, button { width: 100%; font-size: 17px; padding: 14px; border-radius: 14px; border: 0; margin-bottom: 8px; }
+    button.call { background: #22c55e; color: white; font-weight: 700; } button.take { background: #e2e8f0; }
+    button:disabled { opacity: .4; }
+    ul { list-style: none; padding: 0; } li { display: flex; justify-content: space-between; padding: 10px 12px; background: #1e293b; border-radius: 12px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="now">
+      <small>กำลังเรียก</small>
+      <div class="num">{{ current ? code(current.no) : "---" }}</div>
+      <span class="counter" v-if="current">ช่องบริการ {{ current.counter }}</span>
+    </div>
+    <div class="stats">
+      <div><b :class="{ busy: waiting.length > 5 }">{{ waiting.length }}</b>คิวที่รอ</div>
+      <div><b>{{ served }}</b>ให้บริการแล้ว</div>
+    </div>
+    <button class="take" @click="take">🎟 รับบัตรคิว (ถัดไป {{ code(lastNo + 1) }})</button>
+    <select v-model="counter"><option v-for="c in 3" :key="c" :value="c">ช่องบริการ {{ c }}</option></select>
+    <button class="call" @click="callNext" :disabled="waiting.length === 0">📢 เรียกคิวถัดไป</button>
+    <h3>ประวัติการเรียก</h3>
+    <ul><li v-for="h in history" :key="h.no"><b>{{ code(h.no) }}</b><span>ช่อง {{ h.counter }} · {{ h.time }}</span></li></ul>
+    <p v-if="history.length === 0" style="opacity:.6">ยังไม่มีการเรียกคิว</p>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    Vue.createApp({
+      data() { return { waiting: [1, 2, 3], lastNo: 3, current: null, counter: 1, history: [] }; },
+      computed: { served() { return this.history.length; } },
+      methods: {
+        code(n) { return "A" + String(n).padStart(3, "0"); },
+        take() { this.lastNo++; this.waiting.push(this.lastNo); },
+        callNext() {
+          const no = this.waiting.shift();
+          this.current = { no, counter: this.counter };
+          this.history.unshift({ no, counter: this.counter, time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) });
+        }
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="5" data-icon="✅" data-unit="5" data-name="To-do List บันทึกถาวร" data-tags="v-model,v-for,computed,localStorage" data-desc="จดงาน ติ๊กเสร็จ กรองตามสถานะ แสดงความคืบหน้า และบันทึกลง localStorage (รันใหม่ข้อมูลยังอยู่)">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>To-do</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f5f3ff; }
+    #app { padding: 20px 16px; }
+    h1 { margin: 0; } .sub { color: #6b7280; margin: 2px 0 14px; }
+    .bar { height: 10px; background: #e5e7eb; border-radius: 99px; overflow: hidden; margin-bottom: 14px; } .bar i { display: block; height: 100%; background: #8b5cf6; transition: width .3s; }
+    form { display: flex; gap: 6px; } input[type=text] { flex: 1; padding: 12px; border-radius: 14px; border: 1px solid #ddd6fe; font-size: 16px; }
+    form button { padding: 0 18px; border-radius: 14px; border: 0; background: #7c3aed; color: white; font-size: 20px; }
+    .tabs { display: flex; gap: 6px; margin: 12px 0; } .tabs button { flex: 1; padding: 8px; border-radius: 999px; border: 0; background: white; }
+    .tabs button.on { background: #7c3aed; color: white; }
+    li { list-style: none; display: flex; align-items: center; gap: 10px; background: white; padding: 12px; border-radius: 14px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(124,58,237,.08); }
+    li.done span { text-decoration: line-through; color: #9ca3af; } li span { flex: 1; } ul { padding: 0; }
+    li input { width: 22px; height: 22px; accent-color: #7c3aed; } .del { border: 0; background: none; font-size: 18px; }
+    .empty { text-align: center; color: #9ca3af; padding: 20px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>📝 งานของฉัน</h1>
+    <p class="sub">เสร็จแล้ว {{ doneCount }} จาก {{ todos.length }} งาน</p>
+    <div class="bar"><i :style="{ width: percent + '%' }"></i></div>
+    <form @submit.prevent="add"><input type="text" v-model="text" placeholder="เพิ่มงานใหม่…"><button>+</button></form>
+    <div class="tabs"><button v-for="f in filters" :key="f.key" :class="{ on: filter === f.key }" @click="filter = f.key">{{ f.label }}</button></div>
+    <ul>
+      <li v-for="t in shown" :key="t.id" :class="{ done: t.done }">
+        <input type="checkbox" v-model="t.done"><span>{{ t.text }}</span><button class="del" @click="remove(t.id)">🗑</button>
+      </li>
+    </ul>
+    <div class="empty" v-if="shown.length === 0">ไม่มีงานในหมวดนี้ 🎉</div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    const saved = JSON.parse(localStorage.getItem("todo-app") || "null");
+    Vue.createApp({
+      data() {
+        return {
+          text: "", filter: "all",
+          filters: [{ key: "all", label: "ทั้งหมด" }, { key: "active", label: "ค้างอยู่" }, { key: "done", label: "เสร็จแล้ว" }],
+          todos: saved || [{ id: 1, text: "อ่านใบความรู้ที่ 5", done: true }, { id: 2, text: "ทำใบงาน To-do", done: false }, { id: 3, text: "ส่งแบบทดสอบ", done: false }]
+        };
+      },
+      computed: {
+        doneCount() { return this.todos.filter(t => t.done).length; },
+        percent() { return this.todos.length ? Math.round(this.doneCount / this.todos.length * 100) : 0; },
+        shown() { return this.todos.filter(t => this.filter === "all" || (this.filter === "done") === t.done); }
+      },
+      watch: { todos: { deep: true, handler(v) { localStorage.setItem("todo-app", JSON.stringify(v)); } } },
+      methods: {
+        add() { if (!this.text.trim()) return; this.todos.push({ id: Date.now(), text: this.text.trim(), done: false }); this.text = ""; },
+        remove(id) { this.todos = this.todos.filter(t => t.id !== id); }
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="6" data-icon="🛒" data-unit="6" data-name="ร้านค้าออนไลน์ + ตะกร้า" data-tags="Component,props/emit,SPA Router" data-desc="SPA 2 หน้า (ร้านค้า / ตะกร้า) ด้วย Hash Router คอมโพเนนต์การ์ดสินค้า เพิ่ม-ลดจำนวน และคำนวณยอดรวม">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IT Shop</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f8fafc; }
+    .top { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+    .top a { text-decoration: none; color: #0f172a; font-weight: 700; }
+    .cart { position: relative; font-size: 22px; } .cart b { position: absolute; top: -6px; right: -10px; background: #ef4444; color: white; font-size: 12px; border-radius: 99px; padding: 1px 6px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
+    .card { background: white; border-radius: 18px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.05); }
+    .pic { font-size: 48px; text-align: center; background: #eff6ff; border-radius: 14px; padding: 12px; }
+    .card h4 { margin: 8px 0 4px; } .price { color: #2563eb; font-weight: 800; }
+    .btn { width: 100%; margin-top: 8px; padding: 10px; border: 0; border-radius: 12px; background: #2563eb; color: white; font-weight: 600; }
+    .line { display: flex; align-items: center; gap: 10px; background: white; margin: 8px 16px; padding: 10px; border-radius: 14px; }
+    .line .q button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #cbd5e1; background: white; }
+    .sum { margin: 16px; padding: 16px; border-radius: 16px; background: #0f172a; color: white; display: flex; justify-content: space-between; font-size: 18px; }
+    .empty { text-align: center; color: #94a3b8; padding: 40px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="top"><a href="#/">🛍 IT Shop</a><a href="#/cart" class="cart">🛒<b v-if="count">{{ count }}</b></a></div>
+    <div v-if="route === '/'" class="grid">
+      <product-card v-for="p in products" :key="p.id" :item="p" @add="add(p)"></product-card>
+    </div>
+    <div v-else>
+      <h2 style="margin:16px">ตะกร้าสินค้า</h2>
+      <div class="line" v-for="l in cart" :key="l.id">
+        <span style="font-size:28px">{{ l.icon }}</span>
+        <div style="flex:1"><b>{{ l.name }}</b><br><small>{{ l.price }} ฿</small></div>
+        <span class="q"><button @click="l.qty--; clean()">−</button> {{ l.qty }} <button @click="l.qty++">+</button></span>
+      </div>
+      <div class="empty" v-if="cart.length === 0">ตะกร้าว่าง <a href="#/">เลือกสินค้า</a></div>
+      <div class="sum" v-else><span>รวม {{ count }} ชิ้น</span><b>{{ total.toLocaleString() }} ฿</b></div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    const app = Vue.createApp({
+      data() {
+        return {
+          route: location.hash.slice(1) || "/", cart: [],
+          products: [
+            { id: 1, icon: "⌨️", name: "คีย์บอร์ด", price: 590 }, { id: 2, icon: "🖱", name: "เมาส์ไร้สาย", price: 350 },
+            { id: 3, icon: "🎧", name: "หูฟัง", price: 890 }, { id: 4, icon: "💾", name: "แฟลชไดรฟ์ 64GB", price: 199 }
+          ]
+        };
+      },
+      computed: {
+        count() { return this.cart.reduce((s, l) => s + l.qty, 0); },
+        total() { return this.cart.reduce((s, l) => s + l.qty * l.price, 0); }
+      },
+      mounted() { window.addEventListener("hashchange", () => { this.route = location.hash.slice(1) || "/"; }); },
+      methods: {
+        add(p) { const l = this.cart.find(x => x.id === p.id); if (l) l.qty++; else this.cart.push({ ...p, qty: 1 }); },
+        clean() { this.cart = this.cart.filter(l => l.qty > 0); }
+      }
+    });
+    app.component("product-card", {
+      props: ["item"], emits: ["add"],
+      template: `<div class="card"><div class="pic">{{ item.icon }}</div><h4>{{ item.name }}</h4>
+        <span class="price">{{ item.price }} ฿</span><button class="btn" @click="$emit('add')">ใส่ตะกร้า</button></div>`
+    });
+    app.mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="7" data-icon="🏫" data-unit="7" data-name="Landing page วิทยาลัย" data-tags="Bootstrap 5,Grid,Components" data-desc="หน้าแรกประชาสัมพันธ์วิทยาลัยด้วย Bootstrap 5 ทั้ง Navbar, Hero, การ์ดสาขา, สถิติ และปุ่มสมัครเรียน">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>วิทยาลัยเทคนิคตัวอย่าง</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
+  <style> .hero { background: linear-gradient(135deg, #1e3a8a, #6d28d9); } .icon { font-size: 40px; } </style>
+</head>
+<body>
+  <nav class="navbar bg-white shadow-sm px-3 sticky-top">
+    <span class="navbar-brand fw-bold">🏫 วท.ตัวอย่าง</span>
+    <a href="#apply" class="btn btn-primary btn-sm rounded-pill">สมัครเรียน</a>
+  </nav>
+  <header class="hero text-white text-center px-3 py-5">
+    <span class="badge bg-warning text-dark mb-2">เปิดรับสมัคร ปีการศึกษา 2569</span>
+    <h1 class="fw-bold">เรียนสายอาชีพ<br>พร้อมทำงานจริง</h1>
+    <p class="opacity-75">ปวช. · ปวส. · ทวิภาคี ร่วมกับสถานประกอบการกว่า 120 แห่ง</p>
+    <a href="#apply" class="btn btn-light btn-lg rounded-pill px-4">สมัครเรียนออนไลน์</a>
+  </header>
+  <section class="container py-4">
+    <h2 class="h4 fw-bold mb-3">สาขาที่เปิดสอน</h2>
+    <div class="row g-3">
+      <div class="col-12 col-md-4"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="icon">💻</div><h3 class="h5">เทคโนโลยีสารสนเทศ</h3><p class="text-muted small mb-0">พัฒนาเว็บแอป ฐานข้อมูล เครือข่าย</p></div></div></div>
+      <div class="col-12 col-md-4"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="icon">📊</div><h3 class="h5">คอมพิวเตอร์ธุรกิจ</h3><p class="text-muted small mb-0">ระบบสำนักงาน การตลาดดิจิทัล</p></div></div></div>
+      <div class="col-12 col-md-4"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="icon">🎨</div><h3 class="h5">ดิจิทัลกราฟิก</h3><p class="text-muted small mb-0">ออกแบบ UX/UI แอนิเมชัน</p></div></div></div>
+    </div>
+  </section>
+  <section class="bg-light py-4">
+    <div class="container"><div class="row text-center g-2">
+      <div class="col-4"><div class="fs-3 fw-bold text-primary">2,400</div><small>นักศึกษา</small></div>
+      <div class="col-4"><div class="fs-3 fw-bold text-primary">96%</div><small>มีงานทำ</small></div>
+      <div class="col-4"><div class="fs-3 fw-bold text-primary">35</div><small>ปีแห่งความภูมิใจ</small></div>
+    </div></div>
+  </section>
+  <section id="apply" class="container py-4">
+    <div class="alert alert-info">📅 รับสมัครถึง 31 มีนาคม 2570 · ไม่มีค่าสมัคร</div>
+    <a href="#" class="btn btn-success w-100 btn-lg">📝 กรอกใบสมัคร</a>
+  </section>
+  <footer class="text-center text-muted small py-3">© 2569 วิทยาลัยเทคนิคตัวอย่าง</footer>
+</body>
+</html>
+</textarea>
+<textarea data-no="8" data-icon="🎓" data-unit="8" data-name="ทะเบียนนักศึกษา (API)" data-tags="fetch,REST API,async/await" data-desc="ดึงข้อมูลนักศึกษาจากฐานข้อมูลผ่าน /api/students ค้นหา กรองห้อง เรียงตามเกรด พร้อมสถานะกำลังโหลด">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ทะเบียนนักศึกษา</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f0fdf4; }
+    #app { padding: 18px 16px; }
+    .tools { display: flex; gap: 6px; margin: 12px 0; } input, select { padding: 10px; border-radius: 12px; border: 1px solid #bbf7d0; font-size: 15px; } input { flex: 1; }
+    .s { display: flex; align-items: center; gap: 12px; background: white; padding: 12px; border-radius: 16px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(22,101,52,.08); }
+    .av { width: 44px; height: 44px; border-radius: 50%; background: #dcfce7; display: grid; place-items: center; font-weight: 700; color: #166534; }
+    .gpa { margin-left: auto; padding: 4px 10px; border-radius: 999px; font-weight: 700; } .hi { background: #dcfce7; color: #166534; } .mid { background: #fef9c3; color: #854d0e; }
+    small { color: #64748b; } .skel { height: 68px; border-radius: 16px; margin-bottom: 8px; background: linear-gradient(90deg, #e2e8f0, #f1f5f9, #e2e8f0); background-size: 200%; animation: sh 1s infinite; }
+    @keyframes sh { to { background-position: -200% 0; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h2 style="margin:0">🎓 ทะเบียนนักศึกษา</h2>
+    <small>ข้อมูลจาก GET /api/students · {{ shown.length }} คน</small>
+    <div class="tools">
+      <input v-model="q" placeholder="🔍 ชื่อหรือรหัส">
+      <select v-model="room"><option value="">ทุกห้อง</option><option v-for="r in rooms" :key="r">{{ r }}</option></select>
+    </div>
+    <div v-if="loading"><div class="skel" v-for="n in 4" :key="n"></div></div>
+    <div v-else-if="error" style="color:#dc2626">⚠️ {{ error }}</div>
+    <div class="s" v-for="s in shown" :key="s.id">
+      <div class="av">{{ s.name.charAt(0) }}</div>
+      <div><b>{{ s.name }}</b><br><small>{{ s.code }} · {{ s.room }} · {{ s.major }}</small></div>
+      <span class="gpa" :class="s.gpa >= 3.5 ? 'hi' : 'mid'">{{ s.gpa.toFixed(2) }}</span>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    Vue.createApp({
+      data() { return { list: [], q: "", room: "", loading: true, error: "" }; },
+      computed: {
+        rooms() { return [...new Set(this.list.map(s => s.room))]; },
+        shown() {
+          return this.list.filter(s => (s.name + s.code).includes(this.q.trim()) && (!this.room || s.room === this.room))
+            .sort((a, b) => b.gpa - a.gpa);
+        }
+      },
+      async mounted() {
+        try {
+          const res = await fetch("/api/students");
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          this.list = await res.json();
+        } catch (e) { this.error = "โหลดข้อมูลไม่สำเร็จ " + e.message; }
+        finally { this.loading = false; }
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="9" data-icon="📅" data-unit="9" data-name="ระบบจองห้องประชุม" data-tags="CRUD,Validation,fetch POST/DELETE" data-desc="จองห้องผ่าน API ตรวจข้อมูลครบ ตรวจจองซ้อน (ห้อง วัน เวลาเดียวกัน) และยกเลิกการจองพร้อมยืนยัน">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>จองห้องประชุม</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #eff6ff; }
+    #app { padding: 18px 16px; }
+    form { background: white; border-radius: 18px; padding: 14px; display: grid; gap: 8px; box-shadow: 0 4px 14px rgba(37,99,235,.08); }
+    input, select { padding: 11px; border-radius: 12px; border: 1px solid #bfdbfe; font-size: 15px; width: 100%; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    form button { padding: 12px; border: 0; border-radius: 12px; background: #2563eb; color: white; font-size: 16px; font-weight: 700; }
+    .msg { padding: 10px; border-radius: 12px; } .bad { background: #fee2e2; color: #991b1b; } .ok { background: #dcfce7; color: #166534; }
+    .b { display: flex; gap: 10px; align-items: center; background: white; border-radius: 14px; padding: 12px; margin-top: 8px; }
+    .d { text-align: center; background: #dbeafe; border-radius: 12px; padding: 6px 10px; font-weight: 700; color: #1d4ed8; }
+    .b button { margin-left: auto; border: 0; background: #fee2e2; color: #b91c1c; border-radius: 10px; padding: 8px 10px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h2 style="margin:0 0 10px">📅 จองห้องประชุม</h2>
+    <form @submit.prevent="save" novalidate>
+      <select v-model="f.roomId"><option v-for="r in rooms" :key="r.id" :value="r.id">{{ r.name }} ({{ r.seats }} ที่นั่ง)</option></select>
+      <input v-model.trim="f.name" placeholder="ชื่อผู้จอง">
+      <div class="two"><input type="date" v-model="f.date"><input type="time" v-model="f.time"></div>
+      <input v-model.trim="f.topic" placeholder="หัวข้อการประชุม">
+      <button :disabled="saving">{{ saving ? "กำลังบันทึก…" : "ยืนยันการจอง" }}</button>
+      <div class="msg" :class="msg.type" v-if="msg.text">{{ msg.text }}</div>
+    </form>
+    <h3>การจองทั้งหมด ({{ bookings.length }})</h3>
+    <div class="b" v-for="b in sorted" :key="b.id">
+      <div class="d">{{ b.date.slice(8) }}/{{ b.date.slice(5, 7) }}<br><small>{{ b.time }}</small></div>
+      <div><b>{{ roomName(b.roomId) }}</b><br><small>{{ b.topic }} · {{ b.name }}</small></div>
+      <button @click="cancel(b)">ยกเลิก</button>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    const H = { "Content-Type": "application/json" };
+    Vue.createApp({
+      data() { return { rooms: [], bookings: [], saving: false, msg: { text: "", type: "" }, f: { roomId: 1, name: "", date: "2026-12-10", time: "09:00", topic: "" } }; },
+      computed: { sorted() { return [...this.bookings].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); } },
+      async mounted() { this.rooms = await (await fetch("/api/rooms")).json(); this.load(); },
+      methods: {
+        roomName(id) { return (this.rooms.find(r => r.id === Number(id)) || {}).name || "-"; },
+        async load() { this.bookings = await (await fetch("/api/bookings")).json(); },
+        async save() {
+          const f = this.f;
+          if (!f.name || !f.date || !f.time || !f.topic) return this.msg = { text: "กรุณากรอกข้อมูลให้ครบทุกช่อง", type: "bad" };
+          if (this.bookings.some(b => b.roomId === f.roomId && b.date === f.date && b.time === f.time)) return this.msg = { text: "ห้องนี้ถูกจองในเวลาดังกล่าวแล้ว", type: "bad" };
+          this.saving = true;
+          const res = await fetch("/api/bookings", { method: "POST", headers: H, body: JSON.stringify(f) });
+          this.saving = false;
+          if (res.ok) { this.msg = { text: "✅ จองสำเร็จ", type: "ok" }; f.name = ""; f.topic = ""; this.load(); }
+        },
+        async cancel(b) {
+          if (!confirm("ยกเลิกการจอง " + b.topic + " ?")) return;
+          const res = await fetch("/api/bookings/" + b.id, { method: "DELETE" });
+          if (res.ok) this.bookings = this.bookings.filter(x => x.id !== b.id);
+        }
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+<textarea data-no="10" data-icon="🛠️" data-unit="10" data-name="ระบบแจ้งซ่อม (ครบวงจร)" data-tags="Vue,Bootstrap,CRUD API,Dashboard" data-desc="โปรเจกต์รวมทุกภารกิจ: แดชบอร์ดสถิติ แท็บกรองสถานะ แจ้งซ่อมใหม่ เปลี่ยนสถานะ ลบ ผ่าน API พร้อมเผยแพร่ได้ทันที">
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ระบบแจ้งซ่อม</title>
+  <meta name="description" content="ระบบแจ้งซ่อมอุปกรณ์และอาคารของวิทยาลัย">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
+  <style> body { background: #f1f5f9; } .stat { border-radius: 16px; } .item { border-radius: 16px; } </style>
+</head>
+<body>
+  <div id="app">
+    <nav class="navbar navbar-dark bg-dark px-3"><span class="navbar-brand">🛠️ แจ้งซ่อม IT</span><span class="badge bg-info text-dark">{{ list.length }} งาน</span></nav>
+    <div class="container py-3">
+      <div class="row g-2 mb-3">
+        <div class="col-4" v-for="s in statuses" :key="s.name">
+          <div class="stat p-2 text-center text-white" :class="s.bg"><div class="fs-4 fw-bold">{{ countOf(s.name) }}</div><small>{{ s.name }}</small></div>
+        </div>
+      </div>
+      <form class="card card-body border-0 shadow-sm mb-3" @submit.prevent="add" novalidate>
+        <input class="form-control mb-2" v-model.trim="form.title" placeholder="อาการเสีย เช่น เครื่องพิมพ์กระดาษติด">
+        <div class="d-flex gap-2"><input class="form-control" v-model.trim="form.place" placeholder="สถานที่"><button class="btn btn-primary text-nowrap">+ แจ้งซ่อม</button></div>
+        <div class="text-danger small mt-1" v-if="err">{{ err }}</div>
+      </form>
+      <div class="btn-group w-100 mb-2">
+        <button class="btn btn-sm" v-for="t in tabs" :key="t" :class="tab === t ? 'btn-dark' : 'btn-outline-dark'" @click="tab = t">{{ t }}</button>
+      </div>
+      <div class="item card border-0 shadow-sm mb-2" v-for="r in shown" :key="r.id">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between"><b>{{ r.title }}</b><button class="btn btn-sm btn-link text-danger p-0" @click="remove(r)">ลบ</button></div>
+          <small class="text-muted">📍 {{ r.place }} · ผู้แจ้ง {{ r.reporter }}</small>
+          <select class="form-select form-select-sm mt-2" :value="r.status" @change="setStatus(r, $event.target.value)">
+            <option v-for="s in statuses" :key="s.name">{{ s.name }}</option>
+          </select>
+        </div>
+      </div>
+      <p class="text-center text-muted" v-if="shown.length === 0">ไม่มีรายการ</p>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.38/vue.global.js"></script>
+  <script>
+    const H = { "Content-Type": "application/json" };
+    Vue.createApp({
+      data() {
+        return {
+          list: [], tab: "ทั้งหมด", err: "", form: { title: "", place: "" },
+          statuses: [{ name: "รอดำเนินการ", bg: "bg-danger" }, { name: "กำลังซ่อม", bg: "bg-warning" }, { name: "เสร็จแล้ว", bg: "bg-success" }]
+        };
+      },
+      computed: {
+        tabs() { return ["ทั้งหมด", ...this.statuses.map(s => s.name)]; },
+        shown() { return this.tab === "ทั้งหมด" ? this.list : this.list.filter(r => r.status === this.tab); }
+      },
+      mounted() { this.load(); },
+      methods: {
+        countOf(name) { return this.list.filter(r => r.status === name).length; },
+        async load() { this.list = await (await fetch("/api/repairs")).json(); },
+        async add() {
+          if (this.form.title.length < 3) { this.err = "กรุณาระบุอาการอย่างน้อย 3 ตัวอักษร"; return; }
+          this.err = "";
+          await fetch("/api/repairs", { method: "POST", headers: H, body: JSON.stringify({ ...this.form, place: this.form.place || "-", status: "รอดำเนินการ", reporter: "ฉัน" }) });
+          this.form = { title: "", place: "" }; this.load();
+        },
+        async setStatus(r, status) { const res = await fetch("/api/repairs/" + r.id, { method: "PATCH", headers: H, body: JSON.stringify({ status }) }); if (res.ok) r.status = status; },
+        async remove(r) { if (confirm("ลบงาน " + r.title + "?")) { await fetch("/api/repairs/" + r.id, { method: "DELETE" }); this.load(); } }
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
+</textarea>
+</div>
+<script>
+/** อ่านระบบตัวอย่างจาก <textarea> ทันทีที่โหลด (แอปจะล้าง body ภายหลัง) */
+var SHOWCASE = (function () {
+  var box = document.getElementById('showcase-src'), out = [];
+  if (!box) return out;
+  Array.prototype.forEach.call(box.querySelectorAll('textarea'), function (t) {
+    out.push({ no: Number(t.dataset.no), icon: t.dataset.icon, unit: Number(t.dataset.unit), name: t.dataset.name, tags: t.dataset.tags.split(','), desc: t.dataset.desc, code: t.value.replace(/^\n/, '') });
+  });
+  box.remove();
+  return out;
+})();
+</script>

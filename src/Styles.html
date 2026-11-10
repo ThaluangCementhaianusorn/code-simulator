@@ -1,11 +1,11 @@
 <style>
 :root {
-  --primary: #1E40AF; --primary-ink: #ffffff; --primary-soft: #E0E7FF;
+  --primary: #4F46E5; --primary-ink: #ffffff; --primary-soft: #EEF2FF; --accent2: #EC4899;
   --accent: #F59E0B; --ok: #059669; --ok-soft: #D1FAE5; --wait: #D97706; --wait-soft: #FEF3C7; --bad: #DC2626; --bad-soft: #FEE2E2;
-  --bg: #F3F5FB; --card: #ffffff; --ink: #0F172A; --muted: #64748B; --line: #E2E8F0; --soft: #F8FAFC;
+  --bg: #F5F6FB; --card: #ffffff; --ink: #0F172A; --muted: #64748B; --line: #E2E8F0; --soft: #F8FAFC;
   --code-bg: #0F172A; --code-ink: #E2E8F0; --console-bg: #111827; --console-ink: #D1FAE5;
   --gold: #D4A017; --silver: #94A3B8; --bronze: #B45309;
-  --radius: 14px; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.06);
+  --radius: 18px; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.06);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -36,7 +36,7 @@ code, pre, textarea.mono, .mono { font-family: 'JetBrains Mono', ui-monospace, C
 .center { text-align: center; }
 
 /* ---------- โครงหน้า ---------- */
-.topbar { position: sticky; top: 0; z-index: 30; background: var(--primary); color: var(--primary-ink); display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 56px; }
+.topbar { position: sticky; top: 0; z-index: 30; background: linear-gradient(120deg, var(--primary), color-mix(in srgb, var(--primary) 55%, var(--accent2))); box-shadow: 0 4px 18px rgba(79,70,229,.25); color: var(--primary-ink); display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 56px; }
 .topbar .brand { font-weight: 600; font-size: 1rem; line-height: 1.2; }
 .topbar .brand small { display: block; font-family: 'Sarabun'; font-weight: 400; opacity: .85; font-size: .78rem; }
 .topbar .back { background: rgba(255,255,255,.15); border: 0; color: inherit; width: 40px; height: 40px; border-radius: 10px; font-size: 1.2rem; cursor: pointer; }
@@ -68,7 +68,7 @@ code, pre, textarea.mono, .mono { font-family: 'JetBrains Mono', ui-monospace, C
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: .95rem; font-weight: 500; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .btn:hover { filter: brightness(.97); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
-.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.btn.primary { background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, var(--accent2))); border-color: transparent; color: var(--primary-ink); box-shadow: 0 4px 14px rgba(79,70,229,.28); }
 .btn.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
 .btn.warn { background: var(--accent); border-color: var(--accent); color: #111827; }
 .btn.danger { color: var(--bad); border-color: var(--bad); background: transparent; }
@@ -237,6 +237,95 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
 }
 .slip { border: 1px dashed #94a3b8; padding: 10px; border-radius: 8px; break-inside: avoid; }
 .slips { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+
+/* ---------- หน้าแรก (Landing) ---------- */
+.land-hero { position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center; border-radius: 24px; padding: 24px 20px; margin-bottom: 16px; color: #fff;
+  background: radial-gradient(circle at 85% 15%, rgba(236,72,153,.55), transparent 45%), radial-gradient(circle at 10% 90%, rgba(34,211,238,.45), transparent 40%), linear-gradient(135deg, #312E81, var(--primary)); box-shadow: 0 18px 40px rgba(49,46,129,.3); }
+.land-hero h1 { font-size: 1.9rem; margin: .3em 0; letter-spacing: .2px; }
+.land-hero p { opacity: .9; margin: 0 0 12px; font-size: .98rem; }
+.land-hero.compact { padding: 18px; } .land-hero.compact h1 { font-size: 1.4rem; }
+.land-tags, .land-stack { display: flex; flex-wrap: wrap; gap: 6px; }
+.land-tags span { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3); padding: 3px 12px; border-radius: 999px; font: 500 .8rem 'Prompt'; }
+.land-stack span { background: rgba(15,23,42,.35); padding: 4px 10px; border-radius: 8px; font: 600 .78rem 'JetBrains Mono', monospace; }
+.land-phone { display: none; }
+@media (min-width: 760px) {
+  .land-hero { grid-template-columns: 1fr 210px; padding: 36px; }
+  .land-phone { display: block; width: 190px; height: 360px; border-radius: 32px; background: #0F172A; padding: 10px; transform: rotate(6deg); box-shadow: 0 30px 50px rgba(0,0,0,.35); justify-self: center; }
+  .lp-screen { height: 100%; border-radius: 24px; background: #F8FAFC; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .lp-bar { height: 22px; border-radius: 8px; background: linear-gradient(90deg, var(--primary), var(--accent2)); }
+  .lp-card { border-radius: 12px; background: #EEF2FF; padding: 10px; display: grid; gap: 6px; } .lp-card i { height: 8px; border-radius: 4px; background: #C7D2FE; } .lp-card i + i { width: 60%; }
+  .lp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; } .lp-grid b { height: 48px; border-radius: 10px; background: #FCE7F3; } .lp-grid b:nth-child(2n) { background: #CFFAFE; }
+  .lp-code { margin-top: auto; background: #282A36; color: #50FA7B; border-radius: 10px; padding: 8px; font: 10px/1.5 'JetBrains Mono', monospace; }
+}
+.land-cols { display: grid; gap: 14px; } @media (min-width: 860px) { .land-cols { grid-template-columns: 400px 1fr; align-items: start; } }
+.login-card { border-top: 4px solid var(--primary); }
+.outline { display: grid; gap: 8px; } @media (min-width: 600px) { .outline { grid-template-columns: 1fr 1fr; } }
+.ol-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 14px; background: var(--soft); border: 1px solid var(--line); }
+.ol-no { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font: 600 .8rem 'Prompt'; }
+.ol-ic { font-size: 1.4rem; line-height: 1.2; }
+.hero-grad { background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 50%, var(--accent2))); color: #fff; border: 0; }
+.hero-grad .ring { background: conic-gradient(#34D399 calc(var(--p) * 1%), rgba(255,255,255,.25) 0); } .hero-grad .ring span { background: color-mix(in srgb, var(--primary) 85%, #000); color: #fff; }
+.showcase-cta { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
+.showcase-cta .i { font-size: 2rem; } .showcase-cta:hover { border-color: var(--primary); }
+.mission { transition: transform .15s, box-shadow .15s; } .mission:not(.locked):hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(79,70,229,.14); }
+.mission .badge { background: linear-gradient(135deg, var(--primary-soft), #FCE7F3); }
+
+/* ---------- แกลเลอรีระบบตัวอย่าง ---------- */
+.sc-grid { display: grid; gap: 12px; } @media (min-width: 640px) { .sc-grid { grid-template-columns: repeat(2, 1fr); } } @media (min-width: 1000px) { .sc-grid { grid-template-columns: repeat(3, 1fr); } }
+.sc-card { text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px; cursor: pointer; box-shadow: var(--shadow); transition: transform .15s, border-color .15s; }
+.sc-card:hover { transform: translateY(-3px); border-color: var(--primary); }
+.sc-card b { font: 600 1.05rem 'Prompt'; display: block; } .sc-card p { color: var(--muted); font-size: .9rem; margin: 4px 0 8px; }
+.sc-ic { font-size: 2.2rem; width: 60px; height: 60px; border-radius: 18px; display: grid; place-items: center; background: linear-gradient(135deg, var(--primary-soft), #FCE7F3); margin-bottom: 8px; }
+.sc-no { font: 500 .75rem 'Prompt'; color: var(--primary); }
+.sc-tags { display: flex; flex-wrap: wrap; gap: 4px; } .sc-tags span { font: 600 .72rem 'JetBrains Mono', monospace; padding: 2px 8px; border-radius: 6px; background: var(--primary-soft); color: var(--primary); }
+
+/* ---------- ตัวจำลองเว็บ + หน้าจอมือถือ ---------- */
+.wsim { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; margin: .9em 0; background: var(--card); box-shadow: var(--shadow); }
+.wsim-seg { display: flex; padding: 6px; gap: 6px; background: var(--soft); border-bottom: 1px solid var(--line); }
+.wsim-seg button { flex: 1; border: 0; border-radius: 10px; padding: 9px; font: 500 .9rem 'Prompt'; background: transparent; color: var(--muted); cursor: pointer; }
+.wsim-seg button.on { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.wsim-grid { display: block; }
+.wsim[data-view="code"] .wsim-view, .wsim[data-view="view"] .wsim-code { display: none; }
+@media (min-width: 900px) {
+  .wsim-seg { display: none; }
+  .wsim-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; }
+  .wsim[data-view] .wsim-view, .wsim[data-view] .wsim-code { display: block; }
+  .wsim-code { border-right: 1px solid var(--line); }
+}
+.wsim-code { background: #282A36; min-width: 0; }
+.wsim-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #1E1F29; color: #CBD5E1; font: 500 .8rem 'JetBrains Mono', monospace; }
+.wsim-head .dots i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; background: #FF5F57; } .wsim-head .dots i:nth-child(2) { background: #FEBC2E; } .wsim-head .dots i:nth-child(3) { background: #28C840; }
+.wsim .keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px 8px; background: #21222C; }
+.wsim .keys button { flex: none; min-width: 36px; height: 34px; border-radius: 8px; border: 1px solid #44475A; background: #343746; color: #F8F8F2; font: 600 15px 'JetBrains Mono', monospace; cursor: pointer; }
+.wsim .CodeMirror { height: auto; font: 14px/1.6 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+.wsim .CodeMirror-scroll { min-height: 260px; max-height: 560px; }
+.wsim textarea.fallback { width: 100%; min-height: 300px; border: 0; padding: 10px; font: 14px 'JetBrains Mono', monospace; background: #282A36; color: #F8F8F2; }
+.wsim-view { background: radial-gradient(circle at 50% 0, var(--primary-soft), var(--soft) 70%); padding: 10px 12px 12px; min-width: 0; }
+.wsim-dev { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.wsim-dev button { border: 1px solid var(--line); background: var(--card); border-radius: 8px; width: 36px; height: 32px; cursor: pointer; font-size: 15px; }
+.wsim-dev button.on { border-color: var(--primary); background: var(--primary-soft); }
+.wsim-dev .url { flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phone { margin: 0 auto; width: max-content; padding: 10px 10px 14px; border-radius: 36px; background: #0F172A; box-shadow: 0 18px 40px rgba(15,23,42,.35), inset 0 0 0 2px #334155; }
+.phone .sbar { display: flex; justify-content: space-between; align-items: center; color: #E2E8F0; font-size: 11px; padding: 2px 16px 6px; }
+.phone .notch { width: 70px; height: 18px; border-radius: 0 0 12px 12px; background: #000; margin-top: -4px; }
+.phone .screen { overflow: hidden; border-radius: 22px; background: #fff; position: relative; }
+.phone iframe { border: 0; display: block; background: #fff; transform-origin: top left; }
+.phone.desk { border-radius: 14px; padding: 8px; width: 100%; } .phone.desk .sbar { display: none; } .phone.desk .screen { border-radius: 6px; }
+.wcon { margin-top: 10px; background: #0F172A; color: #E2E8F0; border-radius: 12px; font: 12.5px/1.5 'JetBrains Mono', ui-monospace, monospace; padding: 8px 10px; min-height: 44px; max-height: 200px; overflow: auto; }
+.wsim .wcon .ln { padding: 2px 0; border-bottom: 1px solid #1E293B; white-space: pre-wrap; word-break: break-word; }
+.wcon .pf { color: #64748B; margin-right: 6px; } .wcon .ph { color: #64748B; }
+.wcon .error { color: #FCA5A5; } .wcon .warn { color: #FCD34D; } .wcon .net { color: #93C5FD; }
+.wcon .th { display: block; color: #FDE68A; font: 14px 'Sarabun', sans-serif; margin-top: 2px; }
+.wcon .st { padding: 0 6px; border-radius: 4px; } .wcon .s2 { background: #065F46; } .wcon .s4, .wcon .s5 { background: #7F1D1D; }
+.wsim > .tools { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: var(--soft); border-top: 1px solid var(--line); align-items: center; }
+.wsim > .tools .btn { min-height: 40px; padding: 0 12px; font-size: .88rem; }
+.wsim .live { display: inline-flex; align-items: center; gap: 4px; font: 500 .85rem 'Prompt'; padding: 0 8px; cursor: pointer; }
+.wsim .live input { accent-color: var(--primary); width: 18px; height: 18px; }
+.wide .wsim-grid { grid-template-columns: minmax(0, 1fr) 380px; }
+.checklist { list-style: none; padding: 0; margin: 6px 0; }
+.checklist li { position: relative; padding: 6px 10px 6px 34px; border-radius: 10px; background: var(--soft); margin: 4px 0; font-size: .93rem; }
+.checklist li::before { content: attr(data-s); position: absolute; left: 10px; top: 6px; }
+.checklist li[data-s=""]::before { content: '◻️'; }
 
 /* ฉลองได้เกียรติบัตร */
 .celebrate { text-align: center; }

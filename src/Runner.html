@@ -294,16 +294,18 @@ function thaiError(err) {
 function makeEditor(host, code, opts) {
   opts = opts || {};
   var cm = null, ta = null, marks = [];
+  var mode = opts.mode || 'python', web = mode !== 'python', ind = web ? '  ' : '    ';
   if (window.CodeMirror) {
     cm = CodeMirror(host, {
-      value: code || '', mode: 'python', lineNumbers: true, indentUnit: 4, tabSize: 4, matchBrackets: true, readOnly: !!opts.readOnly,
-      viewportMargin: Infinity, lineWrapping: false, inputStyle: 'contenteditable',
-      extraKeys: { Tab: function (c) { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); }, 'Shift-Tab': function (c) { c.indentSelection('subtract'); } }
+      value: code || '', mode: mode, lineNumbers: true, indentUnit: ind.length, tabSize: ind.length, matchBrackets: true, readOnly: !!opts.readOnly,
+      viewportMargin: Infinity, lineWrapping: web, inputStyle: 'contenteditable', theme: web ? 'dracula' : 'default',
+      autoCloseTags: web, autoCloseBrackets: web,
+      extraKeys: { Tab: function (c) { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection(ind, 'end'); }, 'Shift-Tab': function (c) { c.indentSelection('subtract'); } }
     });
     if (opts.onChange) cm.on('change', function () { opts.onChange(cm.getValue()); });
   } else {
     ta = document.createElement('textarea'); ta.className = 'fallback mono'; ta.value = code || ''; ta.spellcheck = false; ta.readOnly = !!opts.readOnly;
-    ta.addEventListener('keydown', function (e) { if (e.key === 'Tab') { e.preventDefault(); insertAtTa(ta, '    '); } });
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Tab') { e.preventDefault(); insertAtTa(ta, ind); } });
     if (opts.onChange) ta.addEventListener('input', function () { opts.onChange(ta.value); });
     host.appendChild(ta);
   }

@@ -15,7 +15,7 @@ let step = 0;
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage(); global.__page = page;
   const errors = [];
-  page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+  page.on('pageerror', e => { if (!/nmae is not defined/.test(e.message)) errors.push('pageerror: ' + e.message); }); // nmae = error ที่ตั้งใจให้เกิดในหน้าเว็บของผู้เรียน
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('dialog', d => d.accept());
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -39,32 +39,39 @@ let step = 0;
   ok((await page.$$('.mission.locked')).length === 9, 'ภารกิจ 2–10 ล็อก');
   await shot('home');
 
-  await clickText('.mission h3', 'สวัสดีโลก Python');
+  // หน้าแรก: ระบบตัวอย่าง 10 ระบบ
+  await clickText('.showcase-cta', 'ระบบตัวอย่าง');
+  await page.waitForSelector('.sc-card');
+  ok((await page.$$('.sc-card')).length === 10, 'แกลเลอรีมีระบบตัวอย่าง 10 ระบบ');
+  await shot('gallery');
+  await clickText('.sc-card b', 'ระบบเรียกคิว');
+  await page.waitForSelector('.wsim .CodeMirror');
+  await clickText('.wsim-seg button', 'หน้าจอ');
+  const inFrame = async sel => { for (const fr of page.frames()) { try { const t = await fr.evaluate(s => document.querySelector(s) ? document.querySelector(s).textContent : null, sel); if (t) return t; } catch (e) {} } return ''; };
+  await page.waitForFunction(() => true); let qt = ''; for (let i = 0; i < 60 && !qt.includes('A00'); i++) { await sleep(500); qt = await inFrame('.num'); }
+  ok(qt.includes('---') || qt.includes('A00'), 'ระบบเรียกคิวรันบนหน้าจอมือถือ (' + qt.trim() + ')');
+  await shot('showcase-phone');
+  await page.click('.topbar .back');
+  await page.waitForSelector('.sc-card');
+  await clickText('.bottomnav button', 'ภารกิจ');
+  await page.waitForSelector('.mission');
+
+  await clickText('.mission h3', 'เว็บแอปพลิเคชันและ HTML5');
   await page.waitForSelector('.act');
   await shot('unit');
   await clickText('.act b', 'ใบความรู้ที่ 1');
-  await page.waitForSelector('.sim .CodeMirror');
-  ok((await page.$$('.sim')).length === 6, 'ใบความรู้มีตัวจำลองรันได้ 6 จุด');
-  await page.evaluate(() => [...document.querySelectorAll('.sim')[0].querySelectorAll('button')].find(b => b.textContent.includes('▶ รัน')).click());
-  try { await page.waitForFunction(() => document.querySelector('.sim .console').textContent.includes('สวัสดีชาวโลก'), { timeout: 60000 }); } catch (e) { console.log('CONSOLE=', await page.evaluate(() => document.querySelector('.sim .console').textContent + ' | state=' + PyRunner.state() + ' | load=' + document.querySelector('.loadbar').textContent)); console.log(errors); throw e; }
-  ok(true, 'รัน Python ในเบราว์เซอร์ได้ (Pyodide)');
-  const mode = await page.evaluate(() => PyRunner.state());
-  ok(mode === 'ready', 'สถานะตัวจำลอง ready');
-  await page.evaluate(() => document.querySelectorAll('.sim')[0].scrollIntoView());
+  await page.waitForSelector('.wsim .CodeMirror');
+  ok((await page.$$('.wsim')).length === 4, 'ใบความรู้มีตัวจำลองหน้าจอมือถือ 4 จุด');
+  await page.evaluate(() => [...document.querySelectorAll('.wsim')[0].querySelectorAll('button')].find(b => b.textContent.includes('▶ รัน')).click());
+  let h1 = ''; for (let i = 0; i < 40 && !h1.includes('สวัสดีชาวโลก'); i++) { await sleep(300); for (const fr of page.frames()) { try { const t = await fr.evaluate(() => document.body ? document.body.innerText : ''); if (t.includes('สวัสดีชาวโลก')) h1 = t; } catch (e) {} } }
+  ok(h1.includes('สวัสดีชาวโลก'), 'รัน HTML แล้วแสดงบนหน้าจอมือถือ');
+  await page.evaluate(() => document.querySelectorAll('.wsim')[0].scrollIntoView());
   await shot('knowledge-run');
-  // โหมดทีละบรรทัดที่บล็อกสุดท้าย (a = 5 ...)
-  await page.evaluate(() => { const s = document.querySelectorAll('.sim'); const last = s[s.length - 1]; last.scrollIntoView(); [...last.querySelectorAll('button')].find(b => b.textContent.includes('ทีละบรรทัด')).click(); });
-  await page.waitForFunction(() => { const s = document.querySelectorAll('.sim'); return !s[s.length - 1].querySelector('.trace').classList.contains('hidden'); }, { timeout: 30000 });
-  await page.evaluate(() => { const s = document.querySelectorAll('.sim'); const tr = s[s.length - 1].querySelector('.trace'); const nx = [...tr.querySelectorAll('button')].find(b => b.textContent === '▶'); nx.click(); nx.click(); nx.click(); });
-  const tv = await page.evaluate(() => { const s = document.querySelectorAll('.sim'); return s[s.length - 1].querySelector('.trace').textContent; });
-  ok(/ขั้นที่ 4\//.test(tv) && tv.includes('35'), 'โหมดทีละบรรทัดแสดงค่าตัวแปร');
-  await shot('trace');
-  // error ภาษาไทย
-  await page.evaluate(() => { document.querySelectorAll('.CodeMirror')[0].CodeMirror.setValue('x = 1\nif x > 0\n    print(x)'); });
-  await page.evaluate(() => [...document.querySelectorAll('.sim')[0].querySelectorAll('button')].find(b => b.textContent.includes('▶ รัน')).click());
-  await page.waitForFunction(() => document.querySelector('.sim .console').textContent.includes('ลืมใส่เครื่องหมาย'), { timeout: 20000 });
-  ok(true, 'แปล SyntaxError เป็นภาษาไทย');
-  await page.evaluate(() => document.querySelectorAll('.sim')[0].scrollIntoView());
+  // error ภาษาไทย + เลขบรรทัด
+  await page.evaluate(() => { document.querySelectorAll('.wsim .CodeMirror')[0].CodeMirror.setValue('<p>x</p>\n<script>\nconsole.log(nmae);\n</' + 'script>'); });
+  await page.evaluate(() => [...document.querySelectorAll('.wsim')[0].querySelectorAll('button')].find(b => b.textContent.includes('▶ รัน')).click());
+  await page.waitForFunction(() => document.querySelector('.wsim .wcon').textContent.includes('ไม่รู้จักชื่อ nmae'), { timeout: 20000 });
+  ok(await page.evaluate(() => document.querySelector('.wsim .wcon').textContent.includes('บรรทัด 3')), 'แปล error เป็นภาษาไทยพร้อมเลขบรรทัด');
   await shot('thai-error');
   await clickText('button', 'อ่านจบแล้ว');
   await page.waitForSelector('.act');
@@ -74,16 +81,16 @@ let step = 0;
   const data = id => seed.units.flatMap(u => u.activities).find(a => a.id === id).data;
   for (const [id, title] of [['U1-W', 'ใบงานที่ 1'], ['U1-P', 'แบบฝึกปฏิบัติที่ 1']]) {
     await clickText('.act b', title);
-    await page.waitForSelector('.sim .CodeMirror');
-    await page.evaluate(sols => document.querySelectorAll('.CodeMirror').forEach((c, i) => c.CodeMirror.setValue(sols[i])), data(id).tasks.map(t => t.solution));
-    await clickText('.sim .tools button', 'ตรวจกับตัวอย่าง');
-    await page.waitForFunction(() => document.body.textContent.includes('ผ่านตัวอย่าง'), { timeout: 30000 });
+    await page.waitForSelector('.wsim .CodeMirror');
+    await page.evaluate(sols => document.querySelectorAll('.wsim .CodeMirror').forEach((c, i) => c.CodeMirror.setValue(sols[i])), data(id).tasks.map(t => t.solution));
+    await clickText('.wsim .tools button', 'ตรวจกับตัวอย่าง');
+    await page.waitForFunction(() => /ผ่าน \d+\/\d+ รายการ/.test(document.body.textContent), { timeout: 30000 });
     if (id === 'U1-W') await shot('worksheet-check');
     await clickText('.sticky-foot button', 'ส่งงาน');
     await confirmOk('ส่งงาน');
     await page.waitForFunction(() => /ได้ \d+ \/ \d+ คะแนน/.test((document.querySelector('.modal') || {}).textContent || ''), { timeout: 60000 });
     const txt = await page.evaluate(() => document.querySelector('.modal h2').textContent);
-    ok(txt.includes('ได้ 10 / 10'), title + ' ส่งแล้วได้คะแนนเต็ม (' + txt + ')');
+    ok(/ได้ (\d+) \/ \1 คะแนน/.test(txt), title + ' ส่งแล้วได้คะแนนเต็ม (' + txt + ')');
     if (id === 'U1-W') await shot('worksheet-result');
     await clickText('.modal button', 'กลับไปที่ภารกิจ');
     await page.waitForSelector('.act');
