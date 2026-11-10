@@ -14,7 +14,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.s.outputs.ready }}
+    steps:
+      - id: s
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          if [ -n "$CLASPRC_JSON" ] && [ -n "$SCRIPT_ID" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::ยังไม่ได้ตั้ง secrets CLASPRC_JSON / SCRIPT_ID จึงข้ามการส่งโค้ดขึ้น Apps Script (ดู README)"; echo "ready=false" >> "$GITHUB_OUTPUT"; fi
+
   clasp:
+    needs: check
+    if: needs.check.outputs.ready == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
