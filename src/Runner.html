@@ -1,0 +1,462 @@
+<!-- Runner.html — ตัวจำลองรัน Python ในเบราว์เซอร์ (Pyodide ใน Web Worker) + ตัวแก้ไขโค้ด + โหมดทีละบรรทัด -->
+<script type="text/python" id="py-harness">
+# ===== PY-HARNESS-START =====
+import sys, io, json, time, builtins
+
+class _SimStop(BaseException):
+    pass
+
+class _SimTimeout(BaseException):
+    pass
+
+class _SimTooMuch(BaseException):
+    pass
+
+_REAL_INPUT = builtins.input
+_SKIP = {'__name__', '__builtins__', '__doc__', '__loader__', '__spec__', '__package__', '__annotations__', '__cached__', '__file__'}
+_MAX_OUT = 100000
+
+def _snap(d):
+    out = {}
+    for k, v in list(d.items()):
+        if k in _SKIP or k.startswith('__'):
+            continue
+        if callable(v) or type(v).__name__ == 'module':
+            continue
+        try:
+            r = repr(v)
+        except Exception:
+            r = '?'
+        if len(r) > 80:
+            r = r[:77] + '...'
+        out[k] = {'t': type(v).__name__, 'v': r}
+    return out
+
+def _err_info(e):
+    info = {'type': type(e).__name__, 'message': str(e), 'line': None}
+    if isinstance(e, SyntaxError):
+        info['line'] = e.lineno
+        info['message'] = e.msg
+    else:
+        tb = e.__traceback__
+        while tb is not None:
+            if tb.tb_frame.f_code.co_filename == '<student>':
+                info['line'] = tb.tb_lineno
+            tb = tb.tb_next
+    return info
+
+def _exec(code, stdin, echo, time_limit, steps=None, step_limit=0):
+    out = io.StringIO()
+    lines = stdin.replace('\r\n', '\n').split('\n') if stdin else []
+    if lines and lines[-1] == '':
+        lines.pop()
+    pos = [0]
+
+    def _input(prompt=''):
+        if echo:
+            out.write(str(prompt))
+        if pos[0] >= len(lines):
+            raise EOFError('EOF when reading a line')
+        v = lines[pos[0]]
+        pos[0] += 1
+        if echo:
+            out.write(v + '\n')
+        return v
+
+    deadline = time.time() + time_limit
+    count = [0]
+
+    def tracer(frame, event, arg):
+        if frame.f_code.co_filename != '<student>':
+            return None
+        count[0] += 1
+        if count[0] % 100 == 0:
+            if time.time() > deadline:
+                raise _SimTimeout()
+            if out.tell() > _MAX_OUT:
+                raise _SimTooMuch()
+        if steps is not None and event in ('line', 'return'):
+            if len(steps) >= step_limit:
+                raise _SimStop()
+            st = {'line': frame.f_lineno, 'ev': event, 'fn': frame.f_code.co_name, 'vars': _snap(frame.f_locals), 'out': out.tell()}
+            if frame.f_code.co_name != '<module>':
+                st['g'] = _snap(frame.f_globals)
+                if event == 'return':
+                    try:
+                        st['ret'] = repr(arg)[:80]
+                    except Exception:
+                        st['ret'] = '?'
+            steps.append(st)
+        return tracer
+
+    res = {'output': '', 'error': None, 'timeout': False, 'truncated': False}
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = out
+    sys.stderr = out
+    builtins.input = _input
+    g = {'__name__': '__main__'}
+    try:
+        compiled = compile(code, '<student>', 'exec')
+        sys.settrace(tracer)
+        try:
+            exec(compiled, g)
+        finally:
+            sys.settrace(None)
+    except _SimTimeout:
+        res['timeout'] = True
+    except _SimStop:
+        res['truncated'] = True
+    except _SimTooMuch:
+        res['truncated'] = True
+        res['error'] = {'type': 'OutputTooLong', 'message': 'output too long', 'line': None}
+    except SystemExit:
+        pass
+    except BaseException as e:
+        res['error'] = _err_info(e)
+    finally:
+        sys.settrace(None)
+        sys.stdout, sys.stderr = old_out, old_err
+        builtins.input = _REAL_INPUT
+    text = out.getvalue()
+    if len(text) > _MAX_OUT:
+        text = text[:_MAX_OUT]
+        res['truncated'] = True
+    res['output'] = text
+    return res
+
+def __sim_run(args):
+    a = json.loads(args)
+    return json.dumps(_exec(a['code'], a.get('stdin', ''), True, a.get('timeLimit', 5)), ensure_ascii=False)
+
+def __sim_tests(args):
+    a = json.loads(args)
+    return json.dumps([_exec(a['code'], s, False, a.get('timeLimit', 3)) for s in a['inputs']], ensure_ascii=False)
+
+def __sim_trace(args):
+    a = json.loads(args)
+    steps = []
+    r = _exec(a['code'], a.get('stdin', ''), True, a.get('timeLimit', 5), steps, a.get('limit', 600))
+    r['steps'] = steps
+    return json.dumps(r, ensure_ascii=False)
+# ===== PY-HARNESS-END =====
+</script>
+<script>
+/* ======================= PyRunner ======================= */
+var PyRunner = (function () {
+  var BASE = 'https://cdn.jsdelivr.net/npm/pyodide@0.26.4/';
+  var worker = null, mainPy = null, mode = null, readyP = null, seq = 0, pending = {}, listeners = [];
+  var state = 'idle';
+  // อ่านเก็บไว้ทันทีตอนโหลด เพราะแอปจะล้าง document.body ภายหลัง
+  var HARNESS_SRC = document.getElementById('py-harness').textContent;
+  function emit(s, msg) { state = s; listeners.forEach(function (f) { try { f(s, msg); } catch (e) {} }); }
+  function harness() { return HARNESS_SRC; }
+  function workerSrc() {
+    return [
+      'self.BASE=' + JSON.stringify(BASE) + ';',
+      'self.HARNESS=' + JSON.stringify(harness()) + ';',
+      'var py=null;',
+      'try { importScripts(BASE + "pyodide.js"); } catch (e) { postMessage({type:"fatal", error:"importScripts: " + e}); }',
+      'if (self.loadPyodide) loadPyodide({indexURL: BASE}).then(function(p){ py=p; py.runPython(HARNESS); postMessage({type:"ready"}); }).catch(function(e){ postMessage({type:"fatal", error:String(e)}); });',
+      'onmessage=function(ev){ var m=ev.data; try { var fn=py.globals.get("__sim_"+m.op); var r=fn(JSON.stringify(m.args)); fn.destroy(); postMessage({type:"result", id:m.id, result:JSON.parse(r)}); } catch(e) { postMessage({type:"result", id:m.id, error:String(e)}); } };'
+    ].join('\n');
+  }
+  function loadScript(src) {
+    return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('โหลด ' + src + ' ไม่ได้')); }; document.head.appendChild(s); });
+  }
+  function startMain() {
+    mode = 'main';
+    var p = window.loadPyodide ? Promise.resolve() : loadScript(BASE + 'pyodide.js');
+    return p.then(function () { return window.loadPyodide({ indexURL: BASE }); }).then(function (py) { mainPy = py; py.runPython(harness()); });
+  }
+  function rejectAll(msg) {
+    Object.keys(pending).forEach(function (k) { clearTimeout(pending[k].timer); pending[k].resolve({ timeout: false, crashed: true, output: '', error: { type: 'Crash', message: msg || 'ตัวจำลองหยุดทำงาน', line: null } }); });
+    pending = {};
+  }
+  function start() {
+    if (readyP) return readyP;
+    emit('loading');
+    readyP = new Promise(function (resolve, reject) {
+      var w = null;
+      if (typeof Worker !== 'undefined' && mode !== 'main') {
+        try { w = new Worker(URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' }))); } catch (e) { w = null; }
+      }
+      if (!w) { startMain().then(resolve, reject); return; }
+      var settled = false;
+      function toMain() { if (settled) return; settled = true; try { w.terminate(); } catch (e) {} worker = null; startMain().then(resolve, reject); }
+      w.onmessage = function (ev) {
+        var m = ev.data;
+        if (m.type === 'ready') { settled = true; worker = w; mode = 'worker'; resolve(); }
+        else if (m.type === 'fatal') { toMain(); }
+        else if (m.type === 'result') {
+          var p = pending[m.id]; if (!p) return;
+          delete pending[m.id]; clearTimeout(p.timer);
+          if (m.error) p.resolve({ output: '', error: { type: 'InternalError', message: m.error, line: null } }); else p.resolve(m.result);
+        }
+      };
+      w.onerror = function (e) {
+        if (!settled) { toMain(); return; }
+        try { w.terminate(); } catch (x) {} worker = null; readyP = null; rejectAll('ตัวจำลองหยุดทำงาน (หน่วยความจำไม่พอหรือเรียกฟังก์ชันซ้อนลึกเกินไป)'); emit('idle');
+      };
+    }).then(function () { emit('ready'); }, function (e) { readyP = null; emit('error', String(e && e.message || e)); throw e; });
+    return readyP;
+  }
+  function hardRestart() {
+    if (worker) { try { worker.terminate(); } catch (e) {} }
+    worker = null; readyP = null;
+    rejectAll('หยุดการทำงาน');
+    emit('idle');
+  }
+  function call(op, args, hardMs) {
+    return start().then(function () {
+      if (mode === 'main') {
+        return new Promise(function (res) {
+          setTimeout(function () {
+            try { var fn = mainPy.globals.get('__sim_' + op); var r = fn(JSON.stringify(args)); fn.destroy(); res(JSON.parse(r)); }
+            catch (e) { res({ output: '', error: { type: 'InternalError', message: String(e), line: null } }); }
+          }, 30);
+        });
+      }
+      return new Promise(function (resolve) {
+        var id = ++seq;
+        var timer = setTimeout(function () {
+          delete pending[id];
+          hardRestart();
+          var r = { output: '', error: null, timeout: true };
+          resolve(op === 'tests' ? args.inputs.map(function () { return r; }) : r);
+        }, hardMs);
+        pending[id] = { resolve: resolve, timer: timer };
+        worker.postMessage({ op: op, args: args, id: id });
+      });
+    });
+  }
+  return {
+    onState: function (f) { listeners.push(f); f(state); },
+    state: function () { return state; },
+    warm: function () { return start().catch(function () {}); },
+    stop: hardRestart,
+    run: function (code, stdin) { return call('run', { code: code, stdin: stdin || '', timeLimit: 5 }, 9000); },
+    tests: function (code, inputs) { return call('tests', { code: code, inputs: inputs, timeLimit: 3 }, 3500 * inputs.length + 5000); },
+    trace: function (code, stdin) { return call('trace', { code: code, stdin: stdin || '', timeLimit: 5, limit: 600 }, 12000); }
+  };
+})();
+
+/* ======================= แปล error เป็นภาษาไทย ======================= */
+function thaiError(err) {
+  if (!err) return '';
+  var t = err.type, m = String(err.message || ''), x;
+  var line = err.line ? 'บรรทัด ' + err.line + ': ' : '';
+  var th = '';
+  if (t === 'SyntaxError') {
+    if (/expected ':'/.test(m)) th = 'ลืมใส่เครื่องหมาย : ท้ายบรรทัด (หลัง if / elif / else / for / while / def)';
+    else if (/Missing parentheses in call to 'print'/.test(m)) th = 'print ต้องมีวงเล็บ เช่น print("สวัสดี")';
+    else if (/unterminated string|EOL while scanning/.test(m)) th = 'เปิดเครื่องหมายคำพูด " หรือ \' แล้วไม่ได้ปิด';
+    else if (/was never closed|unexpected EOF/.test(m)) th = 'เปิดวงเล็บแล้วไม่ได้ปิด';
+    else if (/unmatched|closing parenthesis/.test(m)) th = 'วงเล็บปิดเกินมา หรือเปิด-ปิดไม่เข้าคู่กัน';
+    else if (/invalid character|invalid non-printable/.test(m)) th = 'มีอักขระแปลก ๆ เช่น เครื่องหมายคำพูดแบบโค้ง “ ” หรือพิมพ์ด้วยแป้นภาษาไทย ให้พิมพ์ใหม่ด้วยแป้นภาษาอังกฤษ';
+    else if (/cannot assign|Maybe you meant '==' /.test(m) || /Maybe you meant '=='/.test(m)) th = 'ถ้าจะเปรียบเทียบว่าเท่ากัน ให้ใช้ == (เครื่องหมาย = ตัวเดียวคือการกำหนดค่า)';
+    else if (/invalid decimal literal/.test(m)) th = 'ชื่อตัวแปรห้ามขึ้นต้นด้วยตัวเลข หรือเขียนตัวเลขติดกับตัวอักษร';
+    else if (/invalid syntax/.test(m)) th = 'เขียนคำสั่งผิดรูปแบบ ลองตรวจเครื่องหมาย วงเล็บ และการสะกดคำในบรรทัดนี้หรือบรรทัดก่อนหน้า';
+    else th = 'รูปแบบคำสั่งไม่ถูกต้อง';
+  } else if (t === 'IndentationError') {
+    if (/expected an indented block/.test(m)) th = 'บรรทัดนี้ต้องย่อหน้าเข้าไป 4 ช่อง (กดปุ่ม ⇥) เพราะอยู่ใต้คำสั่งที่ลงท้ายด้วย :';
+    else if (/unexpected indent/.test(m)) th = 'ย่อหน้าเกินมา บรรทัดนี้ไม่ต้องเว้นวรรคข้างหน้า';
+    else th = 'การย่อหน้าไม่ตรงกับบรรทัดอื่นในกลุ่มเดียวกัน';
+  } else if (t === 'TabError') th = 'ใช้ Tab ปนกับเว้นวรรค ให้ย่อหน้าแบบเดียวกันทั้งโปรแกรม';
+  else if (t === 'NameError') { x = m.match(/name '(.+?)' is not defined/); th = 'ไม่รู้จักชื่อ ' + (x ? x[1] : '') + ' — สะกดผิด ใช้ตัวแปรก่อนสร้าง หรือลืมใส่ " " ครอบข้อความ'; }
+  else if (t === 'TypeError') {
+    if (/can only concatenate str|unsupported operand.*'str'|must be str, not int|'int' and 'str'|'str' and 'int'/.test(m)) th = 'นำข้อความ (str) มาคำนวณกับตัวเลขไม่ได้ ให้แปลงก่อนด้วย int() หรือ str() หรือใช้ f-string';
+    else if (/not supported between instances of 'str' and 'int'|'int' and 'str'/.test(m)) th = 'เปรียบเทียบข้อความกับตัวเลขไม่ได้ อย่าลืมแปลง input() ด้วย int()';
+    else if (/missing \d+ required positional argument/.test(m)) th = 'เรียกฟังก์ชันโดยส่งค่าไม่ครบตามที่ประกาศไว้';
+    else if (/takes \d+ positional argument/.test(m)) th = 'ส่งค่าให้ฟังก์ชันมากเกินกว่าที่ประกาศไว้';
+    else if (/object is not callable/.test(m)) th = 'ชื่อนี้ไม่ใช่ฟังก์ชัน อาจตั้งชื่อตัวแปรซ้ำกับคำสั่ง เช่น print = ...';
+    else if (/object is not subscriptable/.test(m)) th = 'ข้อมูลชนิดนี้ใช้ [ ] เรียกตำแหน่งไม่ได้';
+    else th = 'ใช้ชนิดข้อมูลไม่ถูกกับคำสั่งนี้';
+  }
+  else if (t === 'ValueError') {
+    if (/invalid literal for int/.test(m)) th = 'แปลงเป็นจำนวนเต็มไม่ได้ ข้อมูลที่ป้อนไม่ใช่ตัวเลขจำนวนเต็ม (ถ้ามีทศนิยมใช้ float())';
+    else if (/could not convert string to float/.test(m)) th = 'แปลงข้อความเป็นตัวเลขทศนิยมไม่ได้';
+    else th = 'ค่าที่ใช้ไม่ถูกต้อง';
+  }
+  else if (t === 'ZeroDivisionError') th = 'หารด้วยศูนย์ไม่ได้';
+  else if (t === 'IndexError') th = 'เรียกตำแหน่งที่ไม่มีอยู่ (ตำแหน่งแรกคือ 0 และตัวสุดท้ายคือ len - 1)';
+  else if (t === 'KeyError') th = 'ไม่มีคีย์นี้ในดิกชันนารี';
+  else if (t === 'EOFError') th = 'โปรแกรมเรียก input() มากกว่าข้อมูลที่ป้อนไว้ ใส่ข้อมูลในช่อง "ข้อมูลนำเข้า" ให้ครบ บรรทัดละ 1 ค่า';
+  else if (t === 'AttributeError') th = 'ข้อมูลชนิดนี้ไม่มีคำสั่งหรือคุณสมบัตินี้ ตรวจการสะกดหลังจุด .';
+  else if (t === 'ModuleNotFoundError' || t === 'ImportError') th = 'ไม่มีโมดูลนี้ในตัวจำลอง';
+  else if (t === 'RecursionError') th = 'ฟังก์ชันเรียกตัวเองซ้อนกันมากเกินไป (ไม่มีจุดหยุด)';
+  else if (t === 'OutputTooLong') th = 'แสดงผลมากเกินไป อาจวนลูปไม่รู้จบ';
+  else if (t === 'Crash' || t === 'InternalError') th = m;
+  else th = 'เกิดข้อผิดพลาด';
+  return { th: line + th, raw: t + ': ' + m };
+}
+
+/* ======================= ตัวแก้ไขโค้ด ======================= */
+function makeEditor(host, code, opts) {
+  opts = opts || {};
+  var cm = null, ta = null, marks = [];
+  if (window.CodeMirror) {
+    cm = CodeMirror(host, {
+      value: code || '', mode: 'python', lineNumbers: true, indentUnit: 4, tabSize: 4, matchBrackets: true, readOnly: !!opts.readOnly,
+      viewportMargin: Infinity, lineWrapping: false, inputStyle: 'contenteditable',
+      extraKeys: { Tab: function (c) { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); }, 'Shift-Tab': function (c) { c.indentSelection('subtract'); } }
+    });
+    if (opts.onChange) cm.on('change', function () { opts.onChange(cm.getValue()); });
+  } else {
+    ta = document.createElement('textarea'); ta.className = 'fallback mono'; ta.value = code || ''; ta.spellcheck = false; ta.readOnly = !!opts.readOnly;
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Tab') { e.preventDefault(); insertAtTa(ta, '    '); } });
+    if (opts.onChange) ta.addEventListener('input', function () { opts.onChange(ta.value); });
+    host.appendChild(ta);
+  }
+  function insertAtTa(t, s) { var a = t.selectionStart, b = t.selectionEnd; t.value = t.value.slice(0, a) + s + t.value.slice(b); t.selectionStart = t.selectionEnd = a + s.length; t.focus(); t.dispatchEvent(new Event('input')); }
+  return {
+    get: function () { return cm ? cm.getValue() : ta.value; },
+    set: function (v) { if (cm) cm.setValue(v); else { ta.value = v; ta.dispatchEvent(new Event('input')); } },
+    insert: function (s) { if (cm) { cm.replaceSelection(s); cm.focus(); } else insertAtTa(ta, s); },
+    mark: function (line, cls) { if (!cm || !line) return; var h = cm.addLineClass(line - 1, 'background', cls); marks.push(h); if (cls === 'cm-run-line') cm.scrollIntoView({ line: line - 1, ch: 0 }, 40); },
+    clearMarks: function () { if (!cm) return; marks.forEach(function (h) { cm.removeLineClass(h, 'background'); }); marks = []; },
+    refresh: function () { if (cm) setTimeout(function () { cm.refresh(); }, 1); },
+    readOnly: function (b) { if (cm) cm.setOption('readOnly', b); else ta.readOnly = b; }
+  };
+}
+
+/* ======================= วิดเจ็ตตัวจำลอง ======================= */
+/**
+ * Sim(host, { code, stdin, showStdin, onChange, extraTools:[{label, cls, onClick}], compact })
+ * คืนค่า { editor, getCode, getStdin, setStdin, print(html), clear(), runBtn }
+ */
+function Sim(host, o) {
+  o = o || {};
+  var root = el('div', { class: 'sim' });
+  var keys = el('div', { class: 'keys', 'aria-label': 'แป้นสัญลักษณ์' });
+  ['⇥', '(', ')', ':', '"', "'", '[', ']', '=', '+', '-', '*', '/', '%', '<', '>', '#', ',', '{', '}', '_'].forEach(function (k) {
+    var b = el('button', { type: 'button', title: k === '⇥' ? 'ย่อหน้า 4 ช่อง' : k }, k);
+    b.onclick = function () { editor.insert(k === '⇥' ? '    ' : k); };
+    keys.appendChild(b);
+  });
+  var edHost = el('div', { class: 'ed' });
+  var stdinWrap = el('div', { class: 'stdin' + (o.showStdin ? '' : ' hidden') });
+  var stdinLabel = el('label', { class: 'small muted' }, 'ข้อมูลนำเข้า (input) — บรรทัดละ 1 ค่า');
+  var stdin = el('textarea', { class: 'in mono', rows: 2, spellcheck: 'false', placeholder: 'เช่น\n5\n8' });
+  stdin.value = o.stdin || '';
+  stdinWrap.appendChild(stdinLabel); stdinWrap.appendChild(stdin);
+  var tools = el('div', { class: 'tools' });
+  var runBtn = el('button', { class: 'btn primary', type: 'button' }, '▶ รัน');
+  var stopBtn = el('button', { class: 'btn hidden', type: 'button' }, '⏹ หยุด');
+  var stepBtn = el('button', { class: 'btn', type: 'button' }, '👣 ทีละบรรทัด');
+  var inBtn = el('button', { class: 'btn', type: 'button', title: 'แสดง/ซ่อนช่องข้อมูลนำเข้า' }, '⌨ input');
+  var resetBtn = el('button', { class: 'btn', type: 'button', title: 'คืนค่าโค้ดตั้งต้น' }, '↺');
+  tools.appendChild(runBtn); tools.appendChild(stopBtn); tools.appendChild(stepBtn); tools.appendChild(inBtn);
+  (o.extraTools || []).forEach(function (t) { var b = el('button', { class: 'btn ' + (t.cls || ''), type: 'button' }, t.label); b.onclick = function () { t.onClick(b); }; tools.appendChild(b); });
+  tools.appendChild(resetBtn);
+  var loadbar = el('div', { class: 'loadbar hidden' });
+  var con = el('div', { class: 'console', 'aria-live': 'polite' });
+  con.innerHTML = '<span class="info">กด ▶ รัน เพื่อดูผลลัพธ์</span>';
+  var trace = el('div', { class: 'trace hidden' });
+  root.appendChild(keys); root.appendChild(edHost); root.appendChild(stdinWrap); root.appendChild(tools); root.appendChild(loadbar); root.appendChild(con); root.appendChild(trace);
+  host.appendChild(root);
+  var editor = makeEditor(edHost, o.code || '', { onChange: o.onChange });
+  editor.refresh();
+  var starter = o.starter !== undefined ? o.starter : (o.code || '');
+
+  PyRunner.onState(function (s, msg) {
+    if (s === 'loading') { loadbar.textContent = '⏳ กำลังเตรียม Python ในเบราว์เซอร์ (ครั้งแรกอาจใช้ 5–20 วินาที)…'; loadbar.classList.remove('hidden'); }
+    else if (s === 'error') { loadbar.textContent = '⚠️ โหลดตัวจำลอง Python ไม่สำเร็จ: ตรวจการเชื่อมต่ออินเทอร์เน็ต แล้วกดรันอีกครั้ง'; loadbar.classList.remove('hidden'); }
+    else loadbar.classList.add('hidden');
+  });
+
+  function busy(b) { runBtn.disabled = b; stepBtn.disabled = b; stopBtn.classList.toggle('hidden', !b); }
+  function showResult(r) {
+    editor.clearMarks();
+    var h = esc(r.output || '');
+    if (r.timeout) h += '\n<span class="err">⏱ โปรแกรมทำงานนานเกินไป จึงถูกหยุด (อาจวนลูปไม่รู้จบ — ตรวจเงื่อนไขของ while)</span>';
+    if (r.error) {
+      var te = thaiError(r.error);
+      h += '\n<span class="err">✗ ' + esc(te.raw) + '</span><span class="th">💬 ' + esc(te.th) + '</span>';
+      if (r.error.line) editor.mark(r.error.line, 'cm-err-line');
+    }
+    if (!r.timeout && !r.error && !r.output) h = '<span class="info">(โปรแกรมทำงานเสร็จ แต่ไม่มีการแสดงผล — ลืม print หรือเปล่า?)</span>';
+    con.innerHTML = h.replace(/^\n/, '');
+  }
+  runBtn.onclick = function () {
+    trace.classList.add('hidden'); busy(true); con.innerHTML = '<span class="info">กำลังรัน…</span>';
+    PyRunner.run(editor.get(), stdin.value).then(function (r) { showResult(r); if (o.onRun) o.onRun(r); }, loadFail).finally(function () { busy(false); });
+  };
+  stopBtn.onclick = function () { PyRunner.stop(); busy(false); con.innerHTML += '\n<span class="err">⏹ หยุดแล้ว</span>'; };
+  inBtn.onclick = function () { stdinWrap.classList.toggle('hidden'); if (!stdinWrap.classList.contains('hidden')) stdin.focus(); };
+  resetBtn.onclick = function () { if (confirm('คืนค่าโค้ดตั้งต้น? โค้ดที่แก้ไว้จะหายไป')) { editor.set(starter); editor.clearMarks(); trace.classList.add('hidden'); } };
+  stepBtn.onclick = function () {
+    busy(true); con.innerHTML = '<span class="info">กำลังบันทึกการทำงานทีละบรรทัด…</span>';
+    PyRunner.trace(editor.get(), stdin.value).then(function (r) {
+      if (!r.steps || !r.steps.length) { showResult(r); return; }
+      renderTrace(r);
+    }, loadFail).finally(function () { busy(false); });
+  };
+  function loadFail() { con.innerHTML = '<span class="err">⚠️ เปิดตัวจำลอง Python ไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ต แล้วกด ▶ รัน อีกครั้ง</span>'; }
+
+  function renderTrace(r) {
+    var steps = r.steps, i = 0, prevVars = {};
+    trace.innerHTML = '';
+    trace.classList.remove('hidden');
+    var info = el('div', { class: 'small' });
+    var ctl = el('div', { class: 'ctl' });
+    var bFirst = el('button', { type: 'button', title: 'เริ่มต้น' }, '⏮'), bPrev = el('button', { type: 'button', title: 'ย้อน' }, '◀'),
+      bNext = el('button', { type: 'button', title: 'ถัดไป' }, '▶'), bLast = el('button', { type: 'button', title: 'สุดท้าย' }, '⏭'),
+      bPlay = el('button', { type: 'button', title: 'เล่นอัตโนมัติ' }, '⏯'), bClose = el('button', { type: 'button', title: 'ปิด' }, '✕');
+    var range = el('input', { type: 'range', min: 0, max: steps.length - 1, value: 0 });
+    [bFirst, bPrev, bNext, bLast, bPlay].forEach(function (b) { ctl.appendChild(b); });
+    ctl.appendChild(range); ctl.appendChild(bClose);
+    var vars = el('div');
+    trace.appendChild(ctl); trace.appendChild(info); trace.appendChild(vars);
+    var timer = null;
+    function show(k) {
+      i = Math.max(0, Math.min(steps.length - 1, k)); range.value = i;
+      var s = steps[i], prev = steps[i - 1];
+      editor.clearMarks(); editor.mark(s.line, 'cm-run-line');
+      var where = s.fn === '<module>' ? 'โปรแกรมหลัก' : 'ในฟังก์ชัน ' + s.fn + '()';
+      info.innerHTML = '<b>ขั้นที่ ' + (i + 1) + '/' + steps.length + '</b> · ' + (s.ev === 'return' ? 'ออกจาก' + where + (s.ret !== undefined ? ' ส่งค่ากลับ = <code>' + esc(s.ret) + '</code>' : '') : 'กำลังจะทำบรรทัด ' + s.line + ' (' + where + ')') +
+        (r.truncated && i === steps.length - 1 ? ' <span class="chip wait">แสดงได้สูงสุด ' + steps.length + ' ขั้น</span>' : '');
+      var pv = prev && prev.fn === s.fn ? prev.vars : {};
+      var names = Object.keys(s.vars);
+      var html = '<table><tr><th>ตัวแปร</th><th>ค่า</th><th>ชนิด</th></tr>';
+      if (!names.length) html += '<tr><td colspan="3" class="muted">ยังไม่มีตัวแปร</td></tr>';
+      names.forEach(function (n) { var v = s.vars[n], ch = !pv[n] || pv[n].v !== v.v; html += '<tr class="' + (ch && i > 0 ? 'chg' : '') + '"><td>' + esc(n) + '</td><td class="v">' + esc(v.v) + '</td><td class="muted">' + esc(v.t) + '</td></tr>'; });
+      html += '</table>';
+      if (s.g) { var gn = Object.keys(s.g); if (gn.length) { html += '<div class="small muted" style="margin-top:6px">ตัวแปรของโปรแกรมหลัก: ' + gn.map(function (n) { return esc(n) + ' = ' + esc(s.g[n].v); }).join(', ') + '</div>'; } }
+      vars.innerHTML = html;
+      con.innerHTML = esc((r.output || '').slice(0, s.out)) || '<span class="info">(ยังไม่มีผลลัพธ์)</span>';
+      if (i === steps.length - 1) {
+        con.innerHTML = esc(r.output || '');
+        if (r.error) { var te = thaiError(r.error); con.innerHTML += '\n<span class="err">✗ ' + esc(te.raw) + '</span><span class="th">💬 ' + esc(te.th) + '</span>'; }
+        if (r.timeout) con.innerHTML += '\n<span class="err">⏱ ทำงานนานเกินไป</span>';
+      }
+    }
+    bFirst.onclick = function () { show(0); }; bPrev.onclick = function () { show(i - 1); }; bNext.onclick = function () { show(i + 1); }; bLast.onclick = function () { show(steps.length - 1); };
+    range.oninput = function () { show(Number(range.value)); };
+    bPlay.onclick = function () { if (timer) { clearInterval(timer); timer = null; return; } timer = setInterval(function () { if (i >= steps.length - 1) { clearInterval(timer); timer = null; return; } show(i + 1); }, 700); };
+    bClose.onclick = function () { if (timer) clearInterval(timer); trace.classList.add('hidden'); editor.clearMarks(); };
+    show(0);
+  }
+
+  return {
+    editor: editor, root: root, runBtn: runBtn,
+    getCode: function () { return editor.get(); },
+    getStdin: function () { return stdin.value; },
+    setStdin: function (v) { stdin.value = v; },
+    showStdin: function () { stdinWrap.classList.remove('hidden'); },
+    print: function (html) { con.innerHTML = html; },
+    showResult: showResult
+  };
+}
+
+/** เปรียบเทียบผลลัพธ์ (ตรรกะเดียวกับ compareOutput_ ใน Core.gs ใช้ตรวจตัวอย่างในเครื่อง) */
+function cmpNorm(s) { return String(s == null ? '' : s).replace(/\r\n?/g, '\n').split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).join('\n').replace(/\n+$/, '').replace(/^\n+/, ''); }
+function cmpOut(actual, expected, mode) {
+  mode = mode || 'trim';
+  if (mode === 'exact') return String(actual) === String(expected);
+  var a = cmpNorm(actual), e = cmpNorm(expected);
+  if (mode === 'contains') return a.indexOf(e) >= 0;
+  if (mode === 'ignorespace') return a.replace(/\s+/g, '') === e.replace(/\s+/g, '');
+  if (mode === 'number') { var re = /-?\d+(?:\.\d+)?/g, an = a.match(re) || [], en = e.match(re) || []; if (an.length !== en.length || !en.length) return false; return en.every(function (x, i) { return Math.abs(Number(x) - Number(an[i])) <= 0.01; }); }
+  return a === e;
+}
+</script>

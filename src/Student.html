@@ -1,0 +1,501 @@
+<!-- Student.html — หน้าผู้เรียน: ภารกิจ ใบความรู้ ใบงาน แบบฝึก แบบทดสอบ คะแนน เกียรติบัตร -->
+<script>
+var StudentApp = (function () {
+  var TOK = 'cs_tok_student';
+  var st = { info: null, me: null, map: null, history: [] };
+  var top, view, nav, cur = null;
+
+  function boot(info) {
+    st.info = info; applyTheme(info);
+    document.title = info.courseName;
+    document.body.innerHTML = '';
+    top = el('header', { class: 'topbar' });
+    view = el('main', { class: 'wrap', id: 'view' });
+    nav = el('nav', { class: 'bottomnav hidden' });
+    [['home', '🎯', 'ภารกิจ'], ['scores', '📊', 'คะแนน'], ['certs', '🏆', 'เกียรติบัตร'], ['logout', '🚪', 'ออก']].forEach(function (n) {
+      var b = el('button', { type: 'button', 'data-k': n[0] }); b.innerHTML = '<span class="i">' + n[1] + '</span>' + n[2];
+      b.onclick = function () { if (n[0] === 'logout') logout(); else go(n[0], {}, true); };
+      nav.appendChild(b);
+    });
+    document.body.appendChild(top); document.body.appendChild(view); document.body.appendChild(nav);
+    Api.onAuthLost = function () { store(TOK, null); Api.token = null; showLogin(); };
+    var t = store(TOK);
+    if (t) { Api.token = t; go('home', {}, true); } else showLogin();
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && cur && (cur.name === 'home' || cur.name === 'scores' || cur.name === 'certs') && !$('.modal-bg')) render();
+    });
+  }
+
+  function setTop(title, sub, back) {
+    top.innerHTML = '';
+    if (back) { var b = el('button', { class: 'back', type: 'button', 'aria-label': 'ย้อนกลับ' }, '‹'); b.onclick = goBack; top.appendChild(b); }
+    var br = el('div', { class: 'brand' }); br.innerHTML = esc(title) + (sub ? '<small>' + esc(sub) + '</small>' : ''); top.appendChild(br);
+    if (st.me) { var w = el('div', { class: 'who' }); w.innerHTML = esc(st.me.firstName) + '<br><span class="small">' + esc(st.me.studentCode) + '</span>'; top.appendChild(w); }
+  }
+  function setNav(k) { nav.classList.toggle('hidden', !k); $$('button', nav).forEach(function (b) { b.classList.toggle('on', b.dataset.k === k); }); }
+
+  function go(name, params, reset) {
+    if (reset) st.history = [];
+    if (cur) st.history.push(cur);
+    cur = { name: name, params: params || {} };
+    render();
+  }
+  function goBack() { cur = st.history.pop() || { name: 'home', params: {} }; render(); }
+  function render() {
+    window.scrollTo(0, 0);
+    if (window.__quizTimer) { clearInterval(window.__quizTimer); window.__quizTimer = null; }
+    view.innerHTML = '<div class="empty"><span class="spin" style="display:inline-block;width:28px;height:28px;border:3px solid var(--primary);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></span></div>';
+    var f = { home: vHome, unit: vUnit, act: vActivity, scores: vScores, certs: vCerts, cert: vCert }[cur.name] || vHome;
+    Promise.resolve().then(function () { return f(cur.params); }).catch(function (e) {
+      view.innerHTML = ''; var c = el('div', { class: 'card empty' }); c.innerHTML = '<span class="i">⚠️</span>' + esc(e.message);
+      var b = el('button', { class: 'btn', style: 'margin-top:12px' }, 'ลองใหม่'); b.onclick = render; c.appendChild(el('br')); c.appendChild(b); view.appendChild(c);
+    });
+  }
+  function loadMap() { return Api.call('courseMap').then(function (m) { st.map = m; st.me = m.student; return m; }); }
+
+  /* ---------------- เข้าสู่ระบบ ---------------- */
+  function showLogin() {
+    st.me = null; cur = null; setNav(null);
+    setTop(st.info.courseName, st.info.schoolName);
+    view.innerHTML = '';
+    var c = el('div', { class: 'card', style: 'max-width:440px;margin:24px auto' });
+    c.innerHTML = '<div class="center"><div style="font-size:3rem">🧑‍💻</div><h1>ห้องเรียนเขียนโปรแกรม</h1><p class="muted">ฝึกเขียนคำสั่ง รันได้ทันที ทำภารกิจให้ครบเพื่อรับเกียรติบัตร</p></div>';
+    var f = el('form');
+    f.innerHTML = '<label class="f" for="lc">รหัสนักศึกษา</label><input class="in" id="lc" inputmode="numeric" autocomplete="username" required>' +
+      '<label class="f" for="lp">PIN (รับจากครูผู้สอน)</label><input class="in" id="lp" type="password" inputmode="numeric" autocomplete="current-password" required>';
+    var b = el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:16px' }, 'เข้าสู่ระบบ'); b.dataset.busy = 'กำลังตรวจสอบ…';
+    f.appendChild(b);
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      withBusy(b, function () {
+        return Api.call('login', { studentCode: $('#lc').value, pin: $('#lp').value }).then(function (r) {
+          Api.token = r.token; store(TOK, r.token); st.me = r.student; toast('ยินดีต้อนรับ ' + r.student.firstName, 'ok'); go('home', {}, true);
+        });
+      }).catch(function () {});
+    };
+    c.appendChild(f);
+    var last = store('cs_last_code'); if (last) $('#lc', f).value = last;
+    $('#lc', f).addEventListener('change', function () { store('cs_last_code', this.value); });
+    if (Api.mode() === 'demo') c.appendChild(demoHint());
+    view.appendChild(c);
+    PyRunner.warm();
+  }
+  function demoHint() {
+    var d = el('div', { class: 'card flat', style: 'margin:16px 0 0;background:var(--wait-soft)' });
+    d.innerHTML = '<b>โหมดสาธิต</b><br>รหัส <code>692010001</code> PIN <code>1234</code> (ยังไม่เริ่มเรียน)<br>รหัส <code>692010004</code> PIN <code>1234</code> (ผ่านแล้ว 3 ภารกิจ)<br><a href="#admin">เปิดหน้าครู</a> รหัสผ่าน <code>teacher1234</code> · <a href="#" id="demo-reset">ล้างข้อมูลสาธิต</a>';
+    setTimeout(function () { var r = $('#demo-reset'); if (r) r.onclick = function (e) { e.preventDefault(); if (confirm('ล้างข้อมูลสาธิตทั้งหมดและเริ่มใหม่?')) { DemoBackend.reset(); location.reload(); } }; }, 0);
+    return d;
+  }
+  function logout() {
+    confirmBox('ออกจากระบบ?', 'โค้ดที่พิมพ์ค้างไว้ยังเก็บอยู่ในเครื่องนี้', 'ออกจากระบบ').then(function (ok) {
+      if (!ok) return; Api.call('logout').catch(function () {}); store(TOK, null); Api.token = null; showLogin();
+    });
+  }
+
+  /* ---------------- หน้าแรก: แผนที่ภารกิจ ---------------- */
+  function vHome() {
+    return loadMap().then(function (m) {
+      setTop(m.settings.courseName, m.settings.schoolName); setNav('home');
+      view.innerHTML = '';
+      var passed = m.units.filter(function (u) { return u.passed; }).length;
+      var hero = el('div', { class: 'card hero' });
+      hero.innerHTML = '<div class="ring" style="--p:' + m.overall.percent + '"><span>' + Math.round(m.overall.percent) + '%</span></div>' +
+        '<div class="grow"><div class="muted small">สวัสดี</div><h1 style="margin:0">' + esc(m.student.firstName) + ' 👋</h1>' +
+        '<div class="small">ผ่านแล้ว <b>' + passed + '/' + m.units.length + '</b> ภารกิจ · เกียรติบัตร <b>' + m.certificates.length + '</b> ใบ</div></div>';
+      view.appendChild(hero);
+      var next = nextStep(m);
+      if (next) {
+        var nb = el('button', { class: 'btn primary block', style: 'margin-bottom:14px' }); nb.innerHTML = '▶ เรียนต่อ: ' + esc(next.act.title);
+        nb.onclick = function () { go('act', { id: next.act.id }); }; view.appendChild(nb);
+      } else if (m.overall.allPassed) {
+        var done = el('div', { class: 'card center', style: 'background:var(--ok-soft)' }); done.innerHTML = '<div style="font-size:2.4rem">🎓</div><b>ยินดีด้วย! ผ่านครบทุกภารกิจแล้ว</b><br><span class="small">ดูเกียรติบัตรสำเร็จหลักสูตรได้ที่แท็บ เกียรติบัตร</span>'; view.appendChild(done);
+      }
+      view.appendChild(el('h2', {}, 'เส้นทางภารกิจ'));
+      m.units.forEach(function (u) {
+        var c = el('div', { class: 'card mission' + (u.locked ? ' locked' : '') + (u.passed ? ' passed' : ''), role: 'button', tabindex: '0' });
+        var chip = u.locked ? '<span class="chip">🔒 ผ่านภารกิจที่ ' + (u.no - 1) + ' ก่อน</span>' : u.passed ? '<span class="chip ok">✓ ผ่าน · ' + esc(u.level.name) + '</span>' : u.doneCount ? '<span class="chip wait">กำลังทำ ' + u.doneCount + '/' + u.total + '</span>' : '<span class="chip pri">ยังไม่เริ่ม</span>';
+        c.innerHTML = '<div class="badge">' + (u.locked ? '🔒' : esc(u.icon || '🎯')) + '</div><div><div class="no">ภารกิจที่ ' + u.no + '</div><h3>' + esc(u.title) + (u.passed ? ' <span class="medal">' + LEVEL_MEDAL[u.level.key] + '</span>' : '') + '</h3>' +
+          '<div class="small muted">' + esc(u.mission) + '</div><div class="row" style="margin-top:6px"><div class="bar grow ' + (u.passed ? 'ok' : '') + '"><i style="width:' + u.percent + '%"></i></div><span class="small">' + Math.round(u.percent) + '%</span></div><div style="margin-top:6px">' + chip + '</div></div>';
+        c.onclick = function () { if (u.locked) toast('ต้องผ่านภารกิจที่ ' + (u.no - 1) + ' ก่อน (ทำครบทุกกิจกรรม และได้ ' + u.need + '% ขึ้นไป)'); else go('unit', { id: u.id }); };
+        c.onkeydown = function (e) { if (e.key === 'Enter') c.onclick(); };
+        view.appendChild(c);
+      });
+      PyRunner.warm();
+    });
+  }
+  function nextStep(m) {
+    for (var i = 0; i < m.units.length; i++) {
+      var u = m.units[i]; if (u.locked) return null;
+      for (var j = 0; j < u.activities.length; j++) if (!u.activities[j].done) return { unit: u, act: u.activities[j] };
+      if (!u.passed) return { unit: u, act: u.activities.filter(function (a) { return a.max > 0 && a.best < a.max; })[0] || u.activities[0] };
+    }
+    return null;
+  }
+
+  /* ---------------- หน้าภารกิจ ---------------- */
+  function vUnit(p) {
+    return loadMap().then(function (m) {
+      var u = m.units.filter(function (x) { return x.id === p.id; })[0];
+      if (!u) throw new Error('ไม่พบภารกิจ');
+      setTop('ภารกิจที่ ' + u.no, u.title, true); setNav('home');
+      view.innerHTML = '';
+      var h = el('div', { class: 'card' });
+      h.innerHTML = '<div class="row"><div style="font-size:2.4rem">' + esc(u.icon) + '</div><div class="grow"><h1 style="margin:0">' + esc(u.title) + '</h1><div class="muted small">' + esc(u.summary) + '</div></div></div>' +
+        '<p><b>🎯 เป้าหมาย:</b> ' + esc(u.mission) + '</p>' +
+        '<div class="row"><div class="bar grow ' + (u.passed ? 'ok' : '') + '"><i style="width:' + u.percent + '%"></i></div><b>' + fmt(u.percent) + '%</b></div>' +
+        '<p class="small muted" style="margin-bottom:0">ผ่านภารกิจเมื่อ ทำครบทั้ง ' + u.total + ' กิจกรรม และได้คะแนนรวม ' + u.need + '% ขึ้นไป (ตอนนี้ ' + fmt(u.earned) + '/' + fmt(u.max) + ' คะแนน) · 🥇 90% · 🥈 75% · 🥉 ผ่านเกณฑ์</p>';
+      view.appendChild(h);
+      if (u.passed) {
+        var cert = m.certificates.filter(function (c) { return c.unitId === u.id; })[0];
+        var cb = el('div', { class: 'card row', style: 'background:var(--ok-soft);cursor:pointer' });
+        cb.innerHTML = '<span style="font-size:2rem">' + LEVEL_MEDAL[u.level.key] + '</span><div class="grow"><b>ได้รับเกียรติบัตรแล้ว ระดับ' + esc(u.level.name) + '</b><div class="small">แตะเพื่อดูและพิมพ์เกียรติบัตร</div></div><span>›</span>';
+        if (cert) cb.onclick = function () { go('cert', { certNo: cert.certNo }); };
+        view.appendChild(cb);
+      }
+      var list = el('div', { class: 'acts' });
+      u.activities.forEach(function (a, i) {
+        var r = el('div', { class: 'act', role: 'button', tabindex: '0' });
+        var status = a.type === 'knowledge' ? (a.done ? '<span class="chip ok">✓ อ่านแล้ว</span>' : '<span class="chip pri">เริ่มที่นี่</span>')
+          : a.done ? (a.best >= a.max ? '<span class="chip ok">✓ เต็ม ' + fmt(a.best) + '/' + fmt(a.max) + '</span>' : '<span class="chip wait">' + fmt(a.best) + '/' + fmt(a.max) + '</span>') : '<span class="chip">ยังไม่ทำ · ' + fmt(a.max) + ' คะแนน</span>';
+        r.innerHTML = '<div class="ti">' + TYPE_ICON[a.type] + '</div><div class="tt"><span class="small muted">' + (i + 1) + '. ' + esc(a.typeName) + '</span><b>' + esc(a.title) + '</b></div>' + status;
+        r.onclick = function () { go('act', { id: a.id }); };
+        r.onkeydown = function (e) { if (e.key === 'Enter') r.onclick(); };
+        list.appendChild(r);
+      });
+      view.appendChild(list);
+    });
+  }
+
+  /* ---------------- กิจกรรม ---------------- */
+  function vActivity(p) {
+    return Api.call('getActivity', { activityId: p.id }).then(function (a) {
+      setTop(a.typeName, 'ภารกิจที่ ' + a.unitNo + ' · ' + a.unitTitle, true); setNav(null);
+      view.innerHTML = '';
+      var h = el('div', { class: 'card' });
+      h.innerHTML = '<div class="row"><span style="font-size:1.8rem">' + TYPE_ICON[a.type] + '</span><div class="grow"><h1 style="margin:0">' + esc(a.title) + '</h1>' +
+        (a.max ? '<div class="small muted">คะแนนเต็ม ' + fmt(a.max) + (a.done ? ' · ดีที่สุด ' + fmt(a.best) : '') + (a.attempts ? ' · ทำแล้ว ' + a.attempts + ' ครั้ง' : '') + '</div>' : '') + '</div></div>';
+      view.appendChild(h);
+      if (a.type === 'knowledge') return vKnowledge(a);
+      if (a.type === 'quiz') return vQuizIntro(a);
+      return vTasks(a);
+    });
+  }
+
+  function codeBlockRunner(lang, code, flags) {
+    if (lang !== 'python' || /norun/.test(flags)) return null;
+    var host = el('div');
+    var needsInput = /input\(/.test(code);
+    Sim(host, { code: code, starter: code, showStdin: needsInput, stdin: needsInput ? '' : '' });
+    return host;
+  }
+
+  function vKnowledge(a) {
+    var c = el('div', { class: 'card' });
+    c.appendChild(mdRender(a.content, { onCode: codeBlockRunner }));
+    view.appendChild(c);
+    var foot = el('div', { class: 'sticky-foot' });
+    var b = el('button', { class: 'btn ' + (a.done ? '' : 'ok') + ' grow' }, a.done ? '✓ อ่านแล้ว · กลับไปที่ภารกิจ' : '✓ อ่านจบแล้ว ไปกิจกรรมถัดไป');
+    b.dataset.busy = 'กำลังบันทึก…';
+    b.onclick = function () {
+      withBusy(b, function () {
+        return Api.call('markRead', { activityId: a.id }).then(function (r) {
+          if (!a.done) toast('บันทึกแล้ว: อ่านใบความรู้ครบ', 'ok');
+          celebrate(r.newCertificates, function () { goBack(); });
+        });
+      }).catch(function () {});
+    };
+    foot.appendChild(b); view.appendChild(foot);
+  }
+
+  /* ----- ใบงาน / แบบฝึก ----- */
+  function draftKey(a, i) { return 'cs_draft_' + (st.me ? st.me.id : '') + '_' + a.id + '_' + i; }
+  function vTasks(a) {
+    if (a.intro) { var ic = el('div', { class: 'card flat', style: 'background:var(--primary-soft)' }); ic.appendChild(mdRender(a.intro)); view.appendChild(ic); }
+    var sims = [];
+    a.tasks.forEach(function (t, i) {
+      var c = el('div', { class: 'card' });
+      c.innerHTML = '<div class="row"><h2 style="margin:0" class="grow">' + esc(t.title) + '</h2><span class="chip pri">' + fmt(t.max) + ' คะแนน</span></div>';
+      c.appendChild(mdRender(t.prompt));
+      var vis = t.tests.filter(function (x) { return !x.hidden; }), hid = t.tests.length - vis.length;
+      if (vis.length) {
+        var tb = '<table class="tests"><tr><th>ตัวอย่าง</th><th>ข้อมูลนำเข้า</th><th>ผลลัพธ์ที่ต้องได้</th></tr>';
+        vis.forEach(function (x, k) { tb += '<tr><td>' + (k + 1) + '</td><td><pre>' + (esc(x.input) || '<span class="muted">-</span>') + '</pre></td><td><pre>' + esc(x.expected) + '</pre></td></tr>'; });
+        tb += '</table>' + (hid ? '<div class="small muted">และมีชุดทดสอบที่ซ่อนไว้อีก ' + hid + ' ชุด ใช้ตอนส่งงาน</div>' : '');
+        var td = el('div'); td.innerHTML = tb; c.appendChild(td);
+      }
+      var draft = store(draftKey(a, i));
+      var code = draft !== null ? draft : (t.lastCode !== null && t.lastCode !== undefined ? t.lastCode : t.starterCode);
+      var hintBox = el('ul', { class: 'hints' });
+      (t.hints || []).forEach(function (hh, k) { hintBox.appendChild(el('li', {}, '💡 คำใบ้ ' + (k + 1) + ': ' + hh)); });
+      var checkOut = el('div');
+      var sim = Sim(c, {
+        code: code, starter: t.starterCode, showStdin: !!t.sampleInput || /input\(/.test(t.starterCode), stdin: t.sampleInput || (vis[0] ? vis[0].input : ''),
+        onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600),
+        extraTools: [
+          { label: '🧪 ตรวจกับตัวอย่าง', onClick: function (btn) { btn.dataset.busy = 'กำลังตรวจ…'; withBusy(btn, function () { return checkVisible(sim, t, checkOut); }).catch(function () {}); } },
+          { label: '💡 คำใบ้ (' + (t.hintCount - t.hints.length) + ')', onClick: function (btn) { askHint(a, i, t, hintBox, btn); } }
+        ]
+      });
+      c.appendChild(checkOut); c.appendChild(hintBox);
+      sims.push(sim);
+      view.appendChild(c);
+    });
+    var foot = el('div', { class: 'sticky-foot' });
+    var left = a.maxAttempts ? a.maxAttempts - a.attempts : null;
+    var info = el('div', { class: 'small grow' }); info.innerHTML = a.maxAttempts ? 'ส่งได้อีก <b>' + Math.max(0, left) + '</b> ครั้ง' : 'ส่งได้ไม่จำกัด<br>เก็บคะแนนดีที่สุด';
+    var sb = el('button', { class: 'btn primary' }, '📤 ส่งงานให้ระบบตรวจ'); sb.dataset.busy = 'กำลังตรวจทุกชุดทดสอบ…';
+    if (left !== null && left <= 0) { sb.disabled = true; sb.textContent = 'ส่งครบแล้ว'; }
+    sb.onclick = function () {
+      confirmBox('ส่งงาน?', 'ระบบจะรันโค้ดทุกข้อกับชุดทดสอบทั้งหมด (รวมชุดที่ซ่อน) แล้วบันทึกคะแนน' + (a.maxAttempts ? '<br>ครั้งนี้จะเป็นการส่งครั้งที่ <b>' + (a.attempts + 1) + '/' + a.maxAttempts + '</b>' : ''), 'ส่งงาน').then(function (ok) {
+        if (!ok) return;
+        withBusy(sb, function () { return submitTasks(a, sims); }).catch(function () {});
+      });
+    };
+    foot.appendChild(info); foot.appendChild(sb); view.appendChild(foot);
+    PyRunner.warm();
+  }
+
+  function checkVisible(sim, t, out) {
+    var vis = t.tests.filter(function (x) { return !x.hidden; });
+    if (!vis.length) { out.innerHTML = '<p class="small muted">ข้อนี้ไม่มีตัวอย่างให้ตรวจ ใช้ ▶ รัน แล้วเทียบกับโจทย์</p>'; return Promise.resolve(); }
+    return PyRunner.tests(sim.getCode(), vis.map(function (x) { return x.input; })).then(function (rs) {
+      var pass = 0, h = '<table class="tests"><tr><th></th><th>ข้อมูลนำเข้า</th><th>ต้องได้</th><th>โปรแกรมได้</th></tr>';
+      rs.forEach(function (r, k) {
+        var ok = !r.error && !r.timeout && cmpOut(r.output, vis[k].expected, vis[k].compare); if (ok) pass++;
+        var got = r.timeout ? '⏱ นานเกินไป' : r.error ? (r.output || '') + '✗ ' + thaiError(r.error).th : r.output;
+        h += '<tr><td class="' + (ok ? 'pass' : 'fail') + '">' + (ok ? '✓' : '✗') + '</td><td><pre>' + esc(vis[k].input) + '</pre></td><td><pre>' + esc(vis[k].expected) + '</pre></td><td><pre>' + esc(got) + '</pre></td></tr>';
+      });
+      out.innerHTML = '<p><b class="' + (pass === rs.length ? 'pass' : 'fail') + '">ผ่านตัวอย่าง ' + pass + '/' + rs.length + '</b>' + (pass === rs.length ? ' — เยี่ยม! ลองส่งงานได้เลย (ยังมีชุดทดสอบที่ซ่อนอยู่)' : ' — ดูความต่างในตาราง แล้วแก้โค้ด') + '</p>' + h + '</table>';
+    });
+  }
+
+  function askHint(a, i, t, box, btn) {
+    if (t.hints.length >= t.hintCount) { toast('ใช้คำใบ้ครบทุกข้อแล้ว'); return; }
+    confirmBox('เปิดคำใบ้?', 'การเปิดคำใบ้จะหักคะแนนข้อนี้ <b>' + a.hintPenalty + '%</b> ของคะแนนเต็มต่อ 1 คำใบ้ (ไม่ต่ำกว่า 0)', 'เปิดคำใบ้').then(function (ok) {
+      if (!ok) return;
+      Api.call('revealHint', { activityId: a.id, taskIndex: i }).then(function (r) {
+        t.hints.push(r.hint); box.appendChild(el('li', {}, '💡 คำใบ้ ' + (r.hintIndex + 1) + ': ' + r.hint));
+        btn.textContent = '💡 คำใบ้ (' + r.remaining + ')';
+      }).catch(function (e) { toast(e.message, 'bad'); });
+    });
+  }
+
+  function submitTasks(a, sims) {
+    var jobs = a.tasks.map(function (t, i) {
+      var code = sims[i].getCode();
+      return function () { return PyRunner.tests(code, t.tests.map(function (x) { return x.input; })).then(function (rs) { return { code: code, outputs: rs.map(function (r) { return r.timeout ? '⏱TIMEOUT' : (r.output || '') + (r.error ? '\n[' + r.error.type + ']' : ''); }) }; }); };
+    });
+    var results = [];
+    return jobs.reduce(function (p, j) { return p.then(j).then(function (r) { results.push(r); }); }, Promise.resolve()).then(function () {
+      return Api.call('submitTasks', { activityId: a.id, tasks: results });
+    }).then(function (r) {
+      a.tasks.forEach(function (t, i) { store(draftKey(a, i), null); });
+      showTaskResult(a, r);
+    });
+  }
+
+  function showTaskResult(a, r) {
+    modal(function (m, close) {
+      var full = r.score >= r.max;
+      m.appendChild(el('div', { class: 'center', style: 'font-size:3rem' }, full ? '🎉' : r.score > 0 ? '👍' : '💪'));
+      var h = el('h2', { class: 'center' }); h.innerHTML = 'ได้ ' + fmt(r.score) + ' / ' + fmt(r.max) + ' คะแนน'; m.appendChild(h);
+      m.appendChild(el('p', { class: 'center muted small' }, 'ส่งครั้งที่ ' + r.attemptNo + ' · คะแนนที่ดีที่สุด ' + fmt(r.best)));
+      r.tasks.forEach(function (t, i) {
+        var d = el('div', { class: 'card flat' });
+        var hh = '<b>' + esc(a.tasks[i].title) + '</b> — ' + fmt(t.earned) + '/' + fmt(t.max) + (t.penalty ? ' <span class="chip wait">หักคำใบ้ ' + fmt(t.penalty) + '</span>' : '') + '<div style="margin-top:6px">';
+        t.results.forEach(function (x, k) { hh += '<span class="chip ' + (x.pass ? 'ok' : 'bad') + '" style="margin:2px">' + (x.pass ? '✓' : '✗') + ' ชุด ' + (k + 1) + (x.hidden ? ' (ซ่อน)' : '') + '</span>'; });
+        hh += '</div>';
+        var bad = t.results.filter(function (x) { return !x.pass && !x.hidden; })[0];
+        if (bad) hh += '<div class="small" style="margin-top:6px">ตัวอย่างที่ยังไม่ผ่าน — ต้องได้:<pre class="code">' + esc(bad.expected) + '</pre>โปรแกรมได้:<pre class="code">' + esc(bad.actual || '') + '</pre></div>';
+        else if (t.results.some(function (x) { return !x.pass; })) hh += '<div class="small muted" style="margin-top:6px">ไม่ผ่านชุดทดสอบที่ซ่อน ลองคิดกรณีพิเศษ เช่น 0 ค่าติดลบ หรือข้อมูลเพียงค่าเดียว</div>';
+        d.innerHTML = hh; m.appendChild(d);
+      });
+      var u = r.unit;
+      m.appendChild(el('p', { class: 'small' }, 'ความก้าวหน้าภารกิจ: ' + fmt(u.percent) + '% (ทำแล้ว ' + u.doneCount + '/' + u.total + ' กิจกรรม)' + (u.passed ? ' ✓ ผ่านแล้ว' : '')));
+      var row = el('div', { class: 'row' });
+      var again = el('button', { class: 'btn grow' }, 'แก้โค้ดต่อ'), back = el('button', { class: 'btn primary grow' }, 'กลับไปที่ภารกิจ');
+      again.onclick = function () { close(); }; back.onclick = function () { close(); goBack(); };
+      row.appendChild(again); row.appendChild(back); m.appendChild(row);
+    }, { onClose: function () { celebrate(r.newCertificates); } });
+  }
+
+  /* ----- แบบทดสอบ ----- */
+  function vQuizIntro(a) {
+    var c = el('div', { class: 'card' });
+    if (a.intro) c.appendChild(mdRender(a.intro));
+    var left = a.maxAttempts ? a.maxAttempts - a.attemptsUsed : null;
+    var info = el('div'); info.innerHTML = '<table class="tests"><tr><th>จำนวนข้อ</th><td>' + a.questionCount + ' ข้อ (' + fmt(a.max) + ' คะแนน)</td></tr><tr><th>เวลา</th><td>' + (a.timeLimitMin ? a.timeLimitMin + ' นาที' : 'ไม่จำกัด') + '</td></tr><tr><th>จำนวนครั้ง</th><td>' + (a.maxAttempts ? 'ทำแล้ว ' + a.attemptsUsed + '/' + a.maxAttempts : 'ไม่จำกัด') + '</td></tr><tr><th>คะแนนดีที่สุด</th><td>' + (a.done ? fmt(a.best) + '/' + fmt(a.max) : '-') + '</td></tr></table>';
+    c.appendChild(info);
+    var b = el('button', { class: 'btn primary block', style: 'margin-top:10px' }, a.activeSession ? '▶ ทำแบบทดสอบต่อ' : '▶ เริ่มทำแบบทดสอบ'); b.dataset.busy = 'กำลังเตรียมข้อสอบ…';
+    if (!a.activeSession && left !== null && left <= 0) { b.disabled = true; b.textContent = 'ทำครบจำนวนครั้งแล้ว'; }
+    b.onclick = function () {
+      var go2 = function () { withBusy(b, function () { return Api.call('startQuiz', { activityId: a.id }).then(function (s) { renderQuiz(a, s); }); }).catch(function () {}); };
+      if (a.activeSession) go2();
+      else confirmBox('เริ่มทำแบบทดสอบ?', (a.timeLimitMin ? 'เวลาจะเริ่มนับทันที <b>' + a.timeLimitMin + ' นาที</b><br>' : '') + (a.maxAttempts ? 'จะนับเป็นครั้งที่ ' + (a.attemptsUsed + 1) + '/' + a.maxAttempts : ''), 'เริ่มเลย').then(function (ok) { if (ok) go2(); });
+    };
+    c.appendChild(b);
+    view.appendChild(c);
+  }
+
+  function renderQuiz(a, s) {
+    view.innerHTML = '';
+    var key = 'cs_quiz_' + s.sessionId, ans = store(key) || {}, textInputs = {};
+    var offset = new Date(s.serverNow).getTime() - Date.now();
+    var deadline = new Date(s.deadlineAt).getTime();
+    var bar = el('div', { class: 'timer' });
+    var tLeft = el('b'), prog = el('span', { class: 'small grow' });
+    bar.appendChild(el('span', {}, '⏱')); bar.appendChild(tLeft); bar.appendChild(prog);
+    var sendTop = el('button', { class: 'btn sm primary' }, 'ส่งคำตอบ'); bar.appendChild(sendTop);
+    view.appendChild(bar);
+    function save() { store(key, ans); updateProg(); }
+    function updateProg() { var n = s.questions.filter(function (q) { return ans[q.id] !== undefined && ans[q.id] !== ''; }).length; prog.textContent = 'ตอบแล้ว ' + n + '/' + s.questions.length + ' ข้อ'; return n; }
+    s.questions.forEach(function (q, i) {
+      var c = el('div', { class: 'card q', id: 'q_' + q.id });
+      c.innerHTML = '<div class="qn">ข้อ ' + (i + 1) + ' · ' + fmt(q.score) + ' คะแนน</div><div style="font-weight:600;margin:4px 0 6px">' + mdInline(q.text) + '</div>';
+      if (q.code) { var pre = el('pre', { class: 'code' }); pre.textContent = q.code; c.appendChild(pre); }
+      if (q.type === 'mc' || q.type === 'tf') {
+        var opts = q.type === 'mc' ? q.choices : [{ i: 'true', text: 'ถูก' }, { i: 'false', text: 'ผิด' }];
+        opts.forEach(function (o) {
+          var lab = el('label', { class: 'opt' }); var r = el('input', { type: 'radio', name: 'r_' + q.id, value: String(o.i) });
+          if (String(ans[q.id]) === String(o.i)) { r.checked = true; lab.classList.add('on'); }
+          r.onchange = function () { ans[q.id] = q.type === 'mc' ? Number(o.i) : String(o.i); $$('.opt', c).forEach(function (x) { x.classList.remove('on'); }); lab.classList.add('on'); save(); };
+          lab.appendChild(r); lab.appendChild(document.createTextNode(o.text)); c.appendChild(lab);
+        });
+      } else {
+        var multi = q.type === 'output';
+        var inp = multi ? el('textarea', { class: 'in mono', rows: 3, placeholder: 'พิมพ์ผลลัพธ์ที่คิดว่าจะได้ (หลายบรรทัดได้)', spellcheck: 'false' }) : el('input', { class: 'in', placeholder: 'พิมพ์คำตอบ', autocapitalize: 'off' });
+        inp.value = ans[q.id] || '';
+        inp.oninput = debounce(function () { ans[q.id] = inp.value; save(); }, 300);
+        textInputs[q.id] = inp;
+        c.appendChild(inp);
+      }
+      view.appendChild(c);
+    });
+    var foot = el('div', { class: 'sticky-foot' });
+    var sb = el('button', { class: 'btn primary grow' }, '📤 ส่งคำตอบ'); sb.dataset.busy = 'กำลังส่ง…';
+    foot.appendChild(sb); view.appendChild(foot);
+    updateProg();
+    var submitted = false;
+    function submit(auto) {
+      if (submitted) return Promise.resolve();
+      Object.keys(textInputs).forEach(function (id) { ans[id] = textInputs[id].value; });
+      store(key, ans);
+      submitted = true;
+      if (window.__quizTimer) { clearInterval(window.__quizTimer); window.__quizTimer = null; }
+      return withBusy(sb, function () {
+        return Api.call('submitQuiz', { sessionId: s.sessionId, answers: ans }).then(function (r) { store(key, null); showQuizResult(a, s, r, ans); });
+      }).catch(function () { submitted = false; if (auto) toast('ส่งอัตโนมัติไม่สำเร็จ กรุณากดส่งอีกครั้ง', 'bad'); });
+    }
+    function ask() {
+      var n = updateProg(), miss = s.questions.length - n;
+      confirmBox('ส่งคำตอบ?', miss ? 'ยังไม่ได้ตอบ <b>' + miss + '</b> ข้อ ข้อที่ไม่ตอบจะได้ 0 คะแนน' : 'ตอบครบทุกข้อแล้ว', 'ส่งคำตอบ').then(function (ok) { if (ok) submit(false); });
+    }
+    sb.onclick = ask; sendTop.onclick = ask;
+    function tick() {
+      var ms = deadline - (Date.now() + offset);
+      if (!s.timeLimitMin) { tLeft.textContent = 'ไม่จำกัดเวลา'; return; }
+      if (ms <= 0) { tLeft.textContent = '00:00'; toast('หมดเวลา ระบบกำลังส่งคำตอบให้อัตโนมัติ'); submit(true); return; }
+      var m = Math.floor(ms / 60000), sec = Math.floor(ms % 60000 / 1000);
+      tLeft.textContent = ('0' + m).slice(-2) + ':' + ('0' + sec).slice(-2);
+      bar.classList.toggle('low', ms < 60000);
+    }
+    tick(); window.__quizTimer = setInterval(tick, 1000);
+  }
+
+  function showQuizResult(a, s, r, ans) {
+    view.innerHTML = '';
+    var c = el('div', { class: 'card center' });
+    var pct = r.max ? Math.round(r.score / r.max * 100) : 0;
+    c.innerHTML = '<div style="font-size:3rem">' + (pct >= 80 ? '🏆' : pct >= 50 ? '👍' : '📚') + '</div><h1>ได้ ' + fmt(r.score) + ' / ' + fmt(r.max) + ' คะแนน</h1>' +
+      (r.late ? '<p class="chip bad">ส่งหลังหมดเวลา ไม่ได้คะแนน</p>' : '') +
+      '<p class="muted">คะแนนดีที่สุด ' + fmt(r.best) + ' · ทำแล้ว ' + r.attemptsUsed + (r.maxAttempts ? '/' + r.maxAttempts : '') + ' ครั้ง' + (r.revealAnswers ? '' : '<br>เฉลยจะแสดงเมื่อใช้สิทธิ์ทำครบทุกครั้ง') + '</p>';
+    view.appendChild(c);
+    var qBy = {}; s.questions.forEach(function (q, i) { q.no = i + 1; qBy[q.id] = q; });
+    r.results.slice().sort(function (x, y) { return qBy[x.id].no - qBy[y.id].no; }).forEach(function (x) {
+      var q = qBy[x.id], d = el('div', { class: 'qres ' + (x.correct ? 'ok' : 'bad') });
+      var mine = ans[q.id]; if (q.type === 'mc' && mine !== undefined) mine = (q.choices.filter(function (o) { return o.i === mine; })[0] || {}).text; if (q.type === 'tf' && mine !== undefined) mine = mine === 'true' ? 'ถูก' : 'ผิด';
+      d.innerHTML = '<b>' + (x.correct ? '✓' : '✗') + ' ข้อ ' + q.no + '</b> ' + mdInline(q.text) + (q.code ? '<pre class="code">' + esc(q.code) + '</pre>' : '') +
+        '<div class="small">คำตอบของคุณ: <code>' + esc(mine === undefined || mine === '' ? '(ไม่ได้ตอบ)' : mine) + '</code>' + (x.answer !== undefined ? ' · เฉลย: <code>' + esc(x.answer) + '</code>' : '') + '</div>' +
+        (x.explain && (x.correct || r.revealAnswers) ? '<div class="small muted">💬 ' + esc(x.explain) + '</div>' : '');
+      view.appendChild(d);
+    });
+    var b = el('button', { class: 'btn primary block', style: 'margin-top:14px' }, 'กลับไปที่ภารกิจ');
+    b.onclick = function () { goBack(); }; view.appendChild(b);
+    celebrate(r.newCertificates);
+  }
+
+  /* ---------------- คะแนนของฉัน ---------------- */
+  function vScores() {
+    return Api.call('myScores').then(function (m) {
+      st.me = m.student; setTop('คะแนนของฉัน', m.student.name); setNav('scores');
+      view.innerHTML = '';
+      var h = el('div', { class: 'card hero' });
+      h.innerHTML = '<div class="ring" style="--p:' + m.overall.percent + '"><span>' + Math.round(m.overall.percent) + '%</span></div><div><h2 style="margin:0">คะแนนรวมทุกภารกิจ</h2><div>' + fmt(m.overall.earned) + ' / ' + fmt(m.overall.max) + ' คะแนน</div><div class="small muted">' + esc(m.student.room || '') + ' · ' + esc(m.student.studentCode) + '</div></div>';
+      view.appendChild(h);
+      m.units.forEach(function (u) {
+        var c = el('div', { class: 'card' });
+        var t = '<div class="row"><h3 class="grow" style="margin:0">ภารกิจที่ ' + u.no + ': ' + esc(u.title) + '</h3>' + (u.passed ? '<span class="chip ok">' + LEVEL_MEDAL[u.level.key] + ' ' + esc(u.level.name) + '</span>' : '<span class="chip">' + fmt(u.percent) + '%</span>') + '</div>';
+        t += '<table class="tests"><tr><th>กิจกรรม</th><th>ได้</th><th>เต็ม</th><th>ครั้ง</th></tr>';
+        u.activities.forEach(function (a) { t += '<tr><td>' + esc(a.typeName) + (a.override ? ' <span class="chip pri">ครูปรับ</span>' : '') + '</td><td>' + (a.max ? (a.done ? fmt(a.best) : '-') : (a.done ? '✓' : '-')) + '</td><td>' + (a.max ? fmt(a.max) : '-') + '</td><td>' + a.attempts + '</td></tr>'; });
+        t += '<tr><th>รวม</th><th>' + fmt(u.earned) + '</th><th>' + fmt(u.max) + '</th><th>' + fmt(u.percent) + '%</th></tr></table>';
+        c.innerHTML = t; view.appendChild(c);
+      });
+      if (m.history.length) {
+        var hc = el('div', { class: 'card' }); var t = '<h3>ประวัติการส่งล่าสุด</h3><table class="tests"><tr><th>วันที่</th><th>กิจกรรม</th><th>คะแนน</th></tr>';
+        m.history.forEach(function (x) { t += '<tr><td class="small">' + thDateTime(x.at) + '</td><td>' + esc(x.title) + '</td><td>' + fmt(x.score) + '/' + fmt(x.max) + '</td></tr>'; });
+        hc.innerHTML = t + '</table>'; view.appendChild(hc);
+      }
+    });
+  }
+
+  /* ---------------- เกียรติบัตร ---------------- */
+  function vCerts() {
+    return loadMap().then(function (m) {
+      setTop('เกียรติบัตรของฉัน', m.student.name); setNav('certs');
+      view.innerHTML = '';
+      if (!m.certificates.length) {
+        var e = el('div', { class: 'card empty' }); e.innerHTML = '<span class="i">🏆</span><b>ยังไม่มีเกียรติบัตร</b><br>ทำทุกกิจกรรมในภารกิจให้ครบ และได้คะแนนตั้งแต่ ' + m.settings.passPercent + '% เพื่อรับเกียรติบัตรใบแรก';
+        var b = el('button', { class: 'btn primary', style: 'margin-top:12px' }, 'ไปทำภารกิจ'); b.onclick = function () { go('home', {}, true); }; e.appendChild(el('br')); e.appendChild(b);
+        view.appendChild(e); return;
+      }
+      var list = el('div', { class: 'cert-list' });
+      m.certificates.slice().sort(function (a, b) { return a.unitId === 'COURSE' ? -1 : b.unitId === 'COURSE' ? 1 : (a.unitId < b.unitId ? -1 : 1); }).forEach(function (c) {
+        var d = el('div', { class: 'card cert-card', role: 'button', tabindex: '0' });
+        d.innerHTML = '<div class="medal">' + (c.unitId === 'COURSE' ? '🎓' : LEVEL_MEDAL[c.level]) + '</div><div class="grow"><b>' + esc(c.title) + '</b><div class="small muted">ระดับ' + esc(c.level) + ' (' + fmt(c.percent) + '%) · ' + thDate(c.issuedAt) + '</div><div class="small muted">เลขที่ ' + esc(c.certNo) + '</div></div><span>›</span>';
+        d.onclick = function () { go('cert', { certNo: c.certNo }); };
+        list.appendChild(d);
+      });
+      view.appendChild(list);
+    });
+  }
+  function vCert(p) {
+    return Api.call('getCertificate', { certNo: p.certNo }).then(function (r) {
+      setTop('เกียรติบัตร', r.cert.certNo, true); setNav('certs');
+      view.innerHTML = '';
+      CertView.render(view, r.cert, r.settings);
+    });
+  }
+
+  /** แสดงความยินดีเมื่อได้เกียรติบัตรใหม่ */
+  function celebrate(list, then) {
+    if (!list || !list.length) { if (then) then(); return; }
+    confetti();
+    modal(function (m, close) {
+      var c = list[0];
+      var d = el('div', { class: 'celebrate' });
+      d.innerHTML = '<span class="big">' + (c.unitId === 'COURSE' ? '🎓' : LEVEL_MEDAL[c.level]) + '</span><h2>ยินดีด้วย! ได้รับเกียรติบัตรใหม่</h2><p><b>' + esc(c.title) + '</b><br>ระดับ' + esc(c.level) + ' (' + fmt(c.percent) + '%)</p>' +
+        (list.length > 1 ? '<p class="small muted">และอีก ' + (list.length - 1) + ' ใบ</p>' : '');
+      m.appendChild(d);
+      var row = el('div', { class: 'row' });
+      var later = el('button', { class: 'btn grow' }, 'ไว้ทีหลัง'), view1 = el('button', { class: 'btn primary grow' }, 'ดูเกียรติบัตร');
+      later.onclick = function () { close(); };
+      view1.onclick = function () { then = null; close(); go('cert', { certNo: c.certNo }); };
+      row.appendChild(later); row.appendChild(view1); m.appendChild(row);
+    }, { onClose: function () { if (then) then(); } });
+  }
+
+  function debounce(fn, ms) { var t; return function () { var a = arguments, s = this; clearTimeout(t); t = setTimeout(function () { fn.apply(s, a); }, ms); }; }
+
+  return { boot: boot };
+})();
+</script>

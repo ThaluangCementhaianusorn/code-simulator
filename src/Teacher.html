@@ -1,0 +1,538 @@
+<!-- Teacher.html — หลังบ้านครู: ภาพรวม สมุดคะแนน นักศึกษา เกียรติบัตร เนื้อหา -->
+<script>
+var TeacherApp = (function () {
+  var TOK = 'cs_tok_teacher';
+  var info, top, layout, side, nav, view, tab = 'dash', gb = null;
+  var TABS = [['dash', '📊', 'ภาพรวม'], ['grades', '📒', 'สมุดคะแนน'], ['students', '👥', 'นักศึกษา'], ['certs', '🏆', 'เกียรติบัตร'], ['content', '📚', 'เนื้อหา'], ['settings', '⚙️', 'ตั้งค่า']];
+  var refreshTimer = null;
+
+  function boot(i) {
+    info = i; applyTheme(i); document.title = 'หลังบ้านครู · ' + i.courseName;
+    document.body.innerHTML = '';
+    top = el('header', { class: 'topbar' });
+    top.innerHTML = '<div class="brand">หลังบ้านครู<small>' + esc(i.courseName) + '</small></div>';
+    document.body.appendChild(top);
+    layout = el('div', { class: 't-layout' });
+    side = el('aside', { class: 'sidebar' }); nav = el('nav', { class: 'bottomnav' }); view = el('main', { class: 'wrap wide' });
+    TABS.forEach(function (t) {
+      var a = el('button', { type: 'button', 'data-k': t[0] }); a.innerHTML = '<span>' + t[1] + '</span> ' + t[2]; a.onclick = function () { show(t[0]); }; side.appendChild(a);
+      var b = el('button', { type: 'button', 'data-k': t[0] }); b.innerHTML = '<span class="i">' + t[1] + '</span>' + t[2]; b.onclick = function () { show(t[0]); }; nav.appendChild(b);
+    });
+    layout.appendChild(side); layout.appendChild(view); layout.appendChild(nav);
+    Api.onAuthLost = function () { store(TOK, null); Api.token = null; login(); };
+    var t = store(TOK);
+    if (t) { Api.token = t; show('dash'); return; }
+    Api.call('teacherAuto').then(function (r) { if (r.token) { Api.token = r.token; store(TOK, r.token); show('dash'); } else login(); }).catch(login);
+  }
+
+  function login() {
+    if (layout.parentNode) layout.remove();
+    var w = el('main', { class: 'wrap' }); document.body.appendChild(w);
+    var c = el('div', { class: 'card', style: 'max-width:420px;margin:24px auto' });
+    c.innerHTML = '<div class="center"><div style="font-size:3rem">👩‍🏫</div><h1>เข้าสู่ระบบครู</h1><p class="muted small">ตั้งรหัสผ่านได้จาก Google Sheet → เมนู ⚙️ ตั้งค่าระบบ → ตั้งรหัสผ่านครู</p></div>';
+    var f = el('form'); f.innerHTML = '<label class="f" for="tp">รหัสผ่านครู</label><input class="in" id="tp" type="password" autocomplete="current-password" required>';
+    var b = el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:14px' }, 'เข้าสู่ระบบ');
+    f.appendChild(b); c.appendChild(f);
+    if (Api.mode() === 'demo') c.appendChild(el('p', { class: 'small muted center' }, 'โหมดสาธิต: รหัสผ่าน teacher1234'));
+    var sl = el('p', { class: 'center small' }); sl.innerHTML = '<a href="' + esc(Api.mode() === 'sheet' ? (info.webAppUrl || '?') : '#student') + '">← ไปหน้านักศึกษา</a>'; c.appendChild(sl);
+    w.appendChild(c);
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      withBusy(b, function () { return Api.call('teacherLogin', { password: $('#tp').value }).then(function (r) { Api.token = r.token; store(TOK, r.token); w.remove(); show('dash'); }); }).catch(function () {});
+    };
+  }
+
+  function show(k) {
+    tab = k;
+    if (!layout.parentNode) document.body.appendChild(layout);
+    $$('button', side).concat($$('button', nav)).forEach(function (b) { b.classList.toggle('on', b.dataset.k === k); });
+    var lo = el('button', { class: 'back', style: 'margin-left:auto;width:auto;padding:0 12px;font-size:.85rem', type: 'button' }, 'ออกจากระบบ');
+    lo.onclick = function () { Api.call('logout').catch(function () {}); store(TOK, null); Api.token = null; location.reload(); };
+    var old = $('.back', top); if (old) old.remove();
+    var oldc = $('.conn', top); if (oldc) oldc.remove();
+    var mode = Api.mode(), conn = el('span', { class: 'conn chip ' + (mode === 'demo' ? 'wait' : 'ok'), style: 'margin-left:auto', title: mode === 'demo' ? 'ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น' : 'อ่าน/เขียน Google Sheet ทุกครั้ง' },
+      mode === 'demo' ? 'โหมดสาธิต' : (mode === 'github' ? '🟢 GitHub ↔ Google Sheet' : '🟢 Google Sheet'));
+    top.appendChild(conn); lo.style.marginLeft = '8px'; top.appendChild(lo);
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (k === 'dash') refreshTimer = setInterval(function () {
+      if (tab !== 'dash' || $('.modal-bg') || document.visibilityState !== 'visible') return;
+      vDash().catch(function () {});
+    }, 30000);
+    view.innerHTML = '<div class="empty">กำลังโหลด…</div>';
+    window.scrollTo(0, 0);
+    ({ dash: vDash, grades: vGrades, students: vStudents, certs: vCerts, content: vContent, settings: vSettings }[k])().catch(function (e) {
+      view.innerHTML = '<div class="card empty"><span class="i">⚠️</span>' + esc(e.message) + '</div>';
+    });
+  }
+
+  /* ---------------- ภาพรวม ---------------- */
+  function vDash() {
+    return Api.call('tDashboard').then(function (d) {
+      view.innerHTML = '<h1>ภาพรวม</h1><p class="muted small" style="margin-top:-6px">' + esc(d.settings.schoolName) + ' · ภาคเรียน ' + esc(d.settings.semester) + '/' + esc(d.settings.academicYear) + ' · อัปเดต ' + new Date().toLocaleTimeString('th-TH') + ' (รีเฟรชเองทุก 30 วินาที)</p>';
+      var k = el('div', { class: 'kpis' });
+      [['นักศึกษา', d.kpi.students, 'คน'], ['ความก้าวหน้าเฉลี่ย', fmt(d.kpi.avgPercent) + '%', 'ทุกภารกิจ'], ['เกียรติบัตรที่ออก', d.kpi.certificates, 'ใบ'], ['จบหลักสูตร', d.kpi.finished, 'คน']].forEach(function (x) {
+        var c = el('div', { class: 'kpi' }); c.innerHTML = '<span>' + x[0] + '</span><b>' + x[1] + '</b><span>' + x[2] + '</span>'; k.appendChild(c);
+      });
+      view.appendChild(k);
+      var g = el('div', { class: 'grid2' });
+      var u = el('div', { class: 'card' }); var t = '<h3>ผลรายภารกิจ</h3><table class="tbl"><tr><th>ภารกิจ</th><th class="num">เริ่มแล้ว</th><th class="num">ผ่าน</th><th>เฉลี่ย</th></tr>';
+      d.units.forEach(function (x) { t += '<tr><td>' + esc(x.icon) + ' ' + x.no + '. ' + esc(x.title) + '</td><td class="num">' + x.started + '</td><td class="num"><b>' + x.passed + '</b>/' + d.kpi.students + '</td><td style="min-width:110px"><div class="row"><div class="bar grow"><i style="width:' + x.avg + '%"></i></div><span class="small">' + fmt(x.avg) + '%</span></div></td></tr>'; });
+      u.innerHTML = t + '</table>';
+      g.appendChild(u);
+      var todo = el('div', { class: 'card' });
+      var h = '<h3>ต้องติดตาม <span class="chip ' + (d.inactive.length ? 'wait' : 'ok') + '">' + d.inactive.length + ' คน</span></h3><p class="small muted">ไม่ได้เข้าทำกิจกรรมเกิน 7 วัน หรือยังไม่เคยเริ่ม</p>';
+      if (!d.inactive.length) h += '<div class="empty small">ทุกคนยังเรียนต่อเนื่อง 👍</div>';
+      else { h += '<table class="tbl"><tr><th>ชื่อ</th><th>ห้อง</th><th>ล่าสุด</th></tr>'; d.inactive.slice(0, 15).forEach(function (s) { h += '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.room) + '</td><td class="small">' + (s.last ? thDate(s.last) : '<span class="chip">ยังไม่เริ่ม</span>') + '</td></tr>'; }); h += '</table>'; }
+      todo.innerHTML = h; g.appendChild(todo);
+      view.appendChild(g);
+      var r = el('div', { class: 'card' }); var rh = '<h3>การส่งงานล่าสุด</h3>';
+      if (!d.recent.length) rh += '<div class="empty small">ยังไม่มีการส่งงาน</div>';
+      else { rh += '<div class="tbl-wrap"><table class="tbl"><tr><th>เวลา</th><th>นักศึกษา</th><th>กิจกรรม</th><th class="num">คะแนน</th></tr>'; d.recent.forEach(function (x) { rh += '<tr><td class="small">' + thDateTime(x.at) + '</td><td>' + esc(x.name) + '</td><td>' + esc(x.title) + '</td><td class="num">' + fmt(x.score) + '/' + fmt(x.max) + '</td></tr>'; }); rh += '</table></div>'; }
+      r.innerHTML = rh; view.appendChild(r);
+    });
+  }
+
+  /* ---------------- สมุดคะแนน ---------------- */
+  function vGrades() {
+    return Api.call('tGradebook').then(function (d) {
+      gb = d;
+      view.innerHTML = '<h1>สมุดคะแนน</h1>';
+      var rooms = Array.from(new Set(d.rows.map(function (r) { return r.student.room || '-'; }))).sort();
+      var state = { room: 'all', q: '', detail: false };
+      var ctl = el('div', { class: 'card flat' });
+      var q = el('input', { class: 'in', placeholder: '🔍 ค้นหาชื่อหรือรหัสนักศึกษา' });
+      var chips = el('div', { class: 'chips' });
+      ['all'].concat(rooms).forEach(function (r) { var b = el('button', { class: 'chip' + (r === 'all' ? ' on' : ''), type: 'button' }, r === 'all' ? 'ทุกห้อง' : r); b.onclick = function () { state.room = r; $$('button', chips).forEach(function (x) { x.classList.remove('on'); }); b.classList.add('on'); draw(); }; chips.appendChild(b); });
+      var row = el('div', { class: 'row' });
+      var det = el('label', { class: 'row small' }); det.innerHTML = '<input type="checkbox"> แสดงคะแนนรายกิจกรรม'; $('input', det).onchange = function () { state.detail = this.checked; draw(); };
+      var csv = el('button', { class: 'btn sm right' }, '⬇ ส่งออก CSV'); csv.onclick = function () { exportCsv(d, filtered()); };
+      row.appendChild(det); row.appendChild(csv);
+      ctl.appendChild(q); ctl.appendChild(chips); ctl.appendChild(row);
+      view.appendChild(ctl);
+      q.oninput = function () { state.q = q.value.trim().toLowerCase(); draw(); };
+      var out = el('div', { class: 'card' }); view.appendChild(out);
+      function filtered() {
+        return d.rows.filter(function (r) { return r.status !== 'deleted' && (state.room === 'all' || (r.student.room || '-') === state.room) && (!state.q || (r.student.name + ' ' + r.student.studentCode).toLowerCase().indexOf(state.q) >= 0); })
+          .sort(function (a, b) { return String(a.student.studentCode) < String(b.student.studentCode) ? -1 : 1; });
+      }
+      function draw() {
+        var rows = filtered();
+        if (!rows.length) { out.innerHTML = '<div class="empty"><span class="i">👥</span>ไม่พบนักศึกษา<br><span class="small">เพิ่มรายชื่อได้ที่แท็บ นักศึกษา</span></div>'; return; }
+        var h = '<div class="small muted" style="margin-bottom:6px">' + rows.length + ' คน · แตะชื่อเพื่อดูรายละเอียด ดูโค้ดที่ส่ง และปรับคะแนน</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>ห้อง</th>';
+        d.units.forEach(function (u) {
+          if (state.detail) d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { h += '<th class="num" title="' + esc(a.title) + '">' + u.no + '.' + TYPE_ICON[a.type] + '<br><span class="small muted">/' + fmt(a.max) + '</span></th>'; });
+          h += '<th class="num">ภารกิจ ' + u.no + '</th>';
+        });
+        h += '<th class="num">รวม</th><th>สถานะ</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          h += '<tr class="click" data-id="' + esc(r.student.id) + '"><td>' + esc(r.student.studentCode) + '</td><td>' + esc(r.student.name) + (r.isSample ? ' <span class="chip">ตัวอย่าง</span>' : '') + '</td><td>' + esc(r.student.room) + '</td>';
+          d.units.forEach(function (u) {
+            if (state.detail) d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { var x = r.acts[a.id]; h += '<td class="num">' + (x.done ? fmt(x.best) + (x.override ? '*' : '') : '<span class="muted">-</span>') + '</td>'; });
+            var uu = r.units[u.id]; h += '<td class="num">' + (uu.passed ? LEVEL_MEDAL[uu.level] + ' ' : '') + fmt(uu.percent) + '%</td>';
+          });
+          h += '<td class="num"><b>' + fmt(r.percent) + '%</b></td><td>' + (r.allPassed ? '<span class="chip ok">🎓 จบหลักสูตร</span>' : r.status === 'inactive' ? '<span class="chip bad">ปิดบัญชี</span>' : '<span class="chip">' + Object.keys(r.units).filter(function (k) { return r.units[k].passed; }).length + '/' + d.units.length + ' ภารกิจ</span>') + '</td></tr>';
+        });
+        out.innerHTML = h + '</tbody></table></div>' + (state.detail ? '<p class="small muted">* = ครูปรับคะแนน</p>' : '');
+        $$('tr.click', out).forEach(function (tr) { tr.onclick = function () { studentDetail(tr.dataset.id, function () { show('grades'); }); }; });
+      }
+      draw();
+    });
+  }
+
+  function exportCsv(d, rows) {
+    var head = ['รหัสนักศึกษา', 'ชื่อ-สกุล', 'ห้อง'];
+    d.units.forEach(function (u) { d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { head.push(a.title + ' (' + a.max + ')'); }); head.push('ภารกิจ ' + u.no + ' (%)'); head.push('ภารกิจ ' + u.no + ' ระดับ'); });
+    head.push('คะแนนรวม'); head.push('คะแนนเต็ม'); head.push('ร้อยละรวม');
+    var out = [head];
+    rows.forEach(function (r) {
+      var line = [r.student.studentCode, r.student.name, r.student.room];
+      d.units.forEach(function (u) { d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { var x = r.acts[a.id]; line.push(x.done ? x.best : ''); }); line.push(r.units[u.id].percent); line.push(r.units[u.id].level || ''); });
+      line.push(r.earned); line.push(r.max); line.push(r.percent);
+      out.push(line);
+    });
+    downloadText('สมุดคะแนน-' + new Date().toISOString().slice(0, 10) + '.csv', toCsv(out), 'text/csv');
+  }
+
+  function studentDetail(id, after) {
+    Api.call('tStudentDetail', { studentId: id }).then(function (d) {
+      modal(function (m, close) {
+        m.appendChild(el('h2', {}, d.student.name));
+        m.appendChild(el('p', { class: 'muted small' }, 'รหัส ' + d.student.studentCode + ' · ' + (d.student.room || '-') + ' · ' + (d.status === 'inactive' ? 'ปิดบัญชี' : 'ใช้งาน')));
+        var row = el('div', { class: 'row' });
+        var pin = el('button', { class: 'btn sm' }, '🔑 ออก PIN ใหม่');
+        pin.onclick = function () { confirmBox('ออก PIN ใหม่?', 'PIN เดิมของ ' + esc(d.student.name) + ' จะใช้ไม่ได้ทันที', 'ออก PIN ใหม่').then(function (ok) { if (ok) Api.call('tResetPin', { studentId: id }).then(function (r) { alertPin([{ studentCode: r.studentCode, name: r.name, pin: r.pin, room: d.student.room }]); }).catch(function (e) { toast(e.message, 'bad'); }); }); };
+        row.appendChild(pin);
+        var rs0 = el('button', { class: 'btn sm danger' }, '↺ ล้างการส่งงานรายกิจกรรม');
+        rs0.onclick = function () {
+          var sel0 = el('select', { class: 'in' });
+          (gb ? gb.activities : []).forEach(function (a) { sel0.appendChild(el('option', { value: a.id }, a.title)); });
+          modal(function (m2, close2) {
+            m2.appendChild(el('h2', {}, 'ล้างการส่งงาน'));
+            m2.appendChild(el('p', { class: 'small' }, 'ลบการส่งงาน คำใบ้ รอบสอบ และการปรับคะแนนของ ' + d.student.name + ' ในกิจกรรมที่เลือก เพื่อให้ทำใหม่ได้ (เกียรติบัตรที่ออกแล้วไม่ถูกลบ)'));
+            m2.appendChild(sel0);
+            var go = el('button', { class: 'btn danger block', style: 'margin-top:10px' }, 'ล้างการส่งงาน');
+            go.onclick = function () { withBusy(go, function () { return Api.call('tResetActivity', { studentId: id, activityId: sel0.value }).then(function (r) { toast('ล้างแล้ว ' + r.removed + ' รายการ', 'ok'); close2(); close(); studentDetail(id, after); }); }).catch(function () {}); };
+            m2.appendChild(go);
+          });
+        };
+        if (gb) row.appendChild(rs0);
+        m.appendChild(row);
+        if (d.certificates.length) { var cc = el('p', { class: 'small' }); cc.innerHTML = '🏆 เกียรติบัตร: ' + d.certificates.map(function (c) { return (LEVEL_MEDAL[c.level] || '') + ' ' + esc(c.title); }).join(' · '); m.appendChild(cc); }
+        // ปรับคะแนน
+        var ov = el('div', { class: 'card flat' });
+        ov.innerHTML = '<h3>ปรับคะแนน (เช่น ตรวจใบงานเพิ่มเติม)</h3>';
+        var sel = el('select', { class: 'in' });
+        (gb ? gb.activities.filter(function (a) { return a.max > 0; }) : []).forEach(function (a) { sel.appendChild(el('option', { value: a.id }, a.title + ' (เต็ม ' + a.max + ')')); });
+        var sc = el('input', { class: 'in', type: 'number', min: 0, step: '0.5', placeholder: 'คะแนน' }), rs = el('input', { class: 'in', placeholder: 'เหตุผล (บังคับ) เช่น ตรวจโค้ดแล้วแนวคิดถูก' });
+        var ob = el('button', { class: 'btn primary', style: 'margin-top:8px' }, 'บันทึกคะแนน');
+        ob.onclick = function () { withBusy(ob, function () { return Api.call('tOverride', { studentId: id, activityId: sel.value, score: sc.value, reason: rs.value }).then(function (r) { toast('บันทึกแล้ว' + (r.newCertificates.length ? ' และออกเกียรติบัตรใหม่ ' + r.newCertificates.length + ' ใบ' : ''), 'ok'); close(); if (after) after(); }); }).catch(function () {}); };
+        if (sel.options.length) { ov.appendChild(sel); ov.appendChild(sc); ov.appendChild(rs); ov.appendChild(ob); } else ov.appendChild(el('p', { class: 'small muted' }, 'เปิดจากแท็บสมุดคะแนนเพื่อปรับคะแนน'));
+        m.appendChild(ov);
+        // ประวัติ
+        m.appendChild(el('h3', {}, 'ประวัติการส่ง (' + d.attempts.length + ')'));
+        if (!d.attempts.length) m.appendChild(el('p', { class: 'muted small' }, 'ยังไม่มีการส่งงาน'));
+        d.attempts.forEach(function (t) {
+          var box = el('details', { class: 'card flat' });
+          var sm = el('summary'); sm.innerHTML = '<b>' + esc(t.title) + '</b> — ' + fmt(t.score) + '/' + fmt(t.max) + ' <span class="small muted">' + thDateTime(t.at) + '</span>' + (t.detail && t.detail.late ? ' <span class="chip bad">ส่งช้า</span>' : '');
+          box.appendChild(sm);
+          if (t.detail && t.detail.tasks) t.detail.tasks.forEach(function (k, i) {
+            box.appendChild(el('div', { class: 'small', style: 'margin-top:8px' }, 'ข้อ ' + (i + 1) + ': ' + fmt(k.earned) + '/' + fmt(k.max) + (k.penalty ? ' (หักคำใบ้ ' + k.penalty + ')' : '') + ' · ' + (k.pass || []).map(function (p) { return p ? '✓' : '✗'; }).join(' ')));
+            var pre = el('pre', { class: 'code' }); pre.textContent = k.code || '(ว่าง)'; box.appendChild(pre);
+          });
+          else if (t.detail && t.detail.correct) box.appendChild(el('div', { class: 'small', style: 'margin-top:6px' }, 'ผลรายข้อ: ' + t.detail.correct.map(function (c, i) { return (i + 1) + (c ? '✓' : '✗'); }).join(' ')));
+          m.appendChild(box);
+        });
+        if (d.overrides.length) {
+          m.appendChild(el('h3', {}, 'ประวัติการปรับคะแนน'));
+          d.overrides.forEach(function (o) {
+            var r1 = el('div', { class: 'row small', style: 'margin:4px 0' }); r1.appendChild(el('span', { class: 'grow' }, thDateTime(o.at) + ' · ' + o.score + ' คะแนน · ' + o.reason + ' (' + o.by + ')'));
+            var del = el('button', { class: 'btn sm danger' }, 'ลบ');
+            del.onclick = function () { confirmBox('ลบการปรับคะแนน?', 'คะแนนจะกลับไปใช้ผลการส่งงานจริง', 'ลบ').then(function (ok) { if (ok) Api.call('tDeleteOverride', { overrideId: o.id }).then(function () { toast('ลบแล้ว', 'ok'); close(); studentDetail(id, after); }).catch(function (e) { toast(e.message, 'bad'); }); }); };
+            r1.appendChild(del); m.appendChild(r1);
+          });
+        }
+      });
+    }).catch(function (e) { toast(e.message, 'bad'); });
+  }
+
+  /* ---------------- นักศึกษา ---------------- */
+  function vStudents() {
+    return Api.call('tGradebook').then(function (d) {
+      gb = d;
+      view.innerHTML = '<h1>นักศึกษา</h1>';
+      var acts = el('div', { class: 'row', style: 'margin-bottom:12px' });
+      var add = el('button', { class: 'btn primary' }, '＋ เพิ่มนักศึกษา'), imp = el('button', { class: 'btn' }, '⬆ นำเข้ารายชื่อ');
+      add.onclick = function () { editStudent(null); }; imp.onclick = importStudents;
+      acts.appendChild(add); acts.appendChild(imp); view.appendChild(acts);
+      var c = el('div', { class: 'card' });
+      var rows = d.rows.filter(function (r) { return r.status !== 'deleted'; }).sort(function (a, b) { return String(a.student.studentCode) < String(b.student.studentCode) ? -1 : 1; });
+      if (!rows.length) { c.innerHTML = '<div class="empty"><span class="i">👥</span>ยังไม่มีนักศึกษา<br>กด <b>นำเข้ารายชื่อ</b> แล้ววางจาก Excel ได้เลย</div>'; view.appendChild(c); return; }
+      var h = '<div class="tbl-wrap"><table class="tbl"><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ห้อง</th><th>สถานะ</th><th></th></tr>';
+      rows.forEach(function (r) { h += '<tr><td>' + esc(r.student.studentCode) + '</td><td>' + esc(r.student.name) + (r.isSample ? ' <span class="chip">ตัวอย่าง</span>' : '') + '</td><td>' + esc(r.student.room) + '</td><td>' + (r.status === 'inactive' ? '<span class="chip bad">ปิด</span>' : '<span class="chip ok">ใช้งาน</span>') + '</td><td><button class="btn sm" data-id="' + esc(r.student.id) + '">แก้ไข</button></td></tr>'; });
+      c.innerHTML = h + '</table></div>';
+      loadDeleted();
+      $$('button[data-id]', c).forEach(function (b) { b.onclick = function () { editStudent(rows.filter(function (r) { return r.student.id === b.dataset.id; })[0]); }; });
+      view.appendChild(c);
+    });
+  }
+
+  function loadDeleted() {
+    Api.call('tDeletedStudents').then(function (list) {
+      if (!list.length || tab !== 'students') return;
+      var c = el('div', { class: 'card' });
+      c.innerHTML = '<h3>นักศึกษาที่ลบแบบซ่อน (' + list.length + ')</h3>';
+      list.forEach(function (x) {
+        var r = el('div', { class: 'row', style: 'margin:6px 0' }); r.appendChild(el('span', { class: 'grow' }, x.studentCode + ' · ' + x.name + ' · ' + (x.room || '-')));
+        var b = el('button', { class: 'btn sm' }, '↩ กู้คืน');
+        b.onclick = function () { withBusy(b, function () { return Api.call('tDeleteStudent', { studentId: x.id, mode: 'restore' }).then(function () { toast('กู้คืนแล้ว', 'ok'); show('students'); }); }).catch(function () {}); };
+        r.appendChild(b); c.appendChild(r);
+      });
+      view.appendChild(c);
+    }).catch(function () {});
+  }
+
+  function editStudent(r) {
+    var s = r ? Object.assign({}, r.student, { status: r.status }) : { studentCode: '', prefix: '', firstName: '', lastName: '', room: '', status: 'active' };
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, r ? 'แก้ไขนักศึกษา' : 'เพิ่มนักศึกษา'));
+      var f = el('form');
+      f.innerHTML = '<label class="f">รหัสนักศึกษา</label><input class="in" name="studentCode" required ' + (r ? 'readonly' : '') + '>' +
+        '<div class="row"><div style="width:110px"><label class="f">คำนำหน้า</label><select class="in" name="prefix"><option>นาย</option><option>นางสาว</option><option>นาง</option><option value="">-</option></select></div><div class="grow"><label class="f">ชื่อ</label><input class="in" name="firstName" required></div></div>' +
+        '<label class="f">นามสกุล</label><input class="in" name="lastName"><label class="f">ห้อง</label><input class="in" name="room" placeholder="เช่น ปวช.1/1">' +
+        (r ? '<label class="f">สถานะ</label><select class="in" name="status"><option value="active">ใช้งาน</option><option value="inactive">ปิดบัญชี (เข้าระบบไม่ได้)</option></select>' : '');
+      ['studentCode', 'prefix', 'firstName', 'lastName', 'room', 'status'].forEach(function (k) { if (f[k]) f[k].value = s[k] || (k === 'status' ? 'active' : ''); });
+      var b = el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:14px' }, 'บันทึก'); f.appendChild(b);
+      if (r) {
+        var dz = el('div', { class: 'card flat', style: 'margin-top:16px;border-color:var(--bad)' });
+        dz.innerHTML = '<b style="color:var(--bad)">ลบนักศึกษา</b><p class="small">ลบแบบซ่อน: เข้าระบบไม่ได้ ไม่แสดงในสมุดคะแนน แต่คะแนนยังเก็บไว้ กู้คืนได้<br>ลบถาวร: ลบคะแนน การส่งงาน และเกียรติบัตรทั้งหมด กู้คืนไม่ได้</p>';
+        var soft = el('button', { class: 'btn sm danger', type: 'button' }, 'ลบแบบซ่อน'), hard = el('button', { class: 'btn sm danger', type: 'button', style: 'margin-left:6px' }, 'ลบถาวร');
+        soft.onclick = function () { confirmBox('ลบ ' + esc(s.name) + ' แบบซ่อน?', 'กู้คืนได้ภายหลังจากแท็บ นักศึกษา', 'ลบ').then(function (ok) { if (ok) Api.call('tDeleteStudent', { studentId: s.id, mode: 'soft' }).then(function () { close(); toast('ลบแล้ว (กู้คืนได้)', 'ok'); show('students'); }).catch(function (e) { toast(e.message, 'bad'); }); }); };
+        hard.onclick = function () {
+          var code = prompt('ลบถาวรพร้อมคะแนนทั้งหมด กู้คืนไม่ได้\nพิมพ์รหัสนักศึกษา ' + s.studentCode + ' เพื่อยืนยัน');
+          if (code === null) return;
+          Api.call('tDeleteStudent', { studentId: s.id, mode: 'hard', confirmCode: code }).then(function () { close(); toast('ลบถาวรแล้ว', 'ok'); show('students'); }).catch(function (e) { toast(e.message, 'bad'); });
+        };
+        dz.appendChild(soft); dz.appendChild(hard); f.appendChild(dz);
+      }
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        var o = { id: r ? s.id : undefined }; ['studentCode', 'prefix', 'firstName', 'lastName', 'room', 'status'].forEach(function (k) { if (f[k]) o[k] = f[k].value; });
+        withBusy(b, function () { return Api.call('tSaveStudent', { student: o }).then(function (res) { close(); toast('บันทึกแล้ว', 'ok'); if (res.pin) alertPin([{ studentCode: o.studentCode, name: (o.prefix || '') + o.firstName + ' ' + o.lastName, room: o.room, pin: res.pin }]); show('students'); }); }).catch(function () {});
+      };
+      m.appendChild(f);
+    });
+  }
+
+  function importStudents() {
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, 'นำเข้ารายชื่อนักศึกษา'));
+      var p = el('p', { class: 'small' }); p.innerHTML = 'คัดลอกจาก Excel / Google Sheet แล้ววาง 1 บรรทัดต่อ 1 คน เรียงคอลัมน์:<br><code>รหัส | คำนำหน้า | ชื่อ | นามสกุล | ห้อง</code> (คั่นด้วย Tab หรือจุลภาค)'; m.appendChild(p);
+      var t = el('textarea', { class: 'in mono', rows: 8, placeholder: '692010101\tนาย\tสมชาย\tใจดี\tปวช.1/1' }); m.appendChild(t);
+      var pv = el('div', { class: 'small muted' }); m.appendChild(pv);
+      function parse() {
+        return t.value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(String).map(function (l) { var c = l.split(l.indexOf('\t') >= 0 ? '\t' : ','); return { studentCode: (c[0] || '').trim(), prefix: (c[1] || '').trim(), firstName: (c[2] || '').trim(), lastName: (c[3] || '').trim(), room: (c[4] || '').trim() }; })
+          .filter(function (r) { return /\d/.test(r.studentCode); });
+      }
+      t.oninput = function () { pv.textContent = 'พบ ' + parse().length + ' รายชื่อ (ข้ามบรรทัดหัวตารางให้อัตโนมัติ)'; };
+      var b = el('button', { class: 'btn primary block', style: 'margin-top:10px' }, 'นำเข้าและสร้าง PIN');
+      b.onclick = function () {
+        var rows = parse(); if (!rows.length) { toast('ยังไม่มีรายชื่อ', 'bad'); return; }
+        withBusy(b, function () { return Api.call('tImportStudents', { rows: rows }).then(function (r) { close(); toast('เพิ่ม ' + r.created.length + ' คน' + (r.skipped.length ? ' ข้าม ' + r.skipped.length + ' (รหัสซ้ำ/ไม่ครบ)' : ''), 'ok'); if (r.created.length) alertPin(r.created); show('students'); }); }).catch(function () {});
+      };
+      m.appendChild(b);
+    });
+  }
+
+  /** แสดง PIN ครั้งเดียว พร้อมพิมพ์บัตร */
+  function alertPin(list) {
+    modal(function (m) {
+      m.appendChild(el('h2', {}, '🔑 PIN สำหรับเข้าสู่ระบบ'));
+      m.appendChild(el('p', { class: 'small', style: 'color:var(--bad)' }, 'ระบบเก็บ PIN แบบเข้ารหัส จะแสดงเพียงครั้งนี้ครั้งเดียว ให้พิมพ์หรือดาวน์โหลดไว้แจกนักศึกษา'));
+      var slips = el('div', { class: 'slips print-area', style: 'position:static' });
+      list.forEach(function (x) { var s = el('div', { class: 'slip' }); s.innerHTML = '<b>' + esc(x.name) + '</b><br>' + esc(x.room || '') + '<br>รหัส: <code>' + esc(x.studentCode) + '</code><br>PIN: <code style="font-size:1.1em">' + esc(x.pin) + '</code><br><span class="small muted">' + esc(info.courseName) + '</span>'; slips.appendChild(s); });
+      m.appendChild(slips);
+      var row = el('div', { class: 'row', style: 'margin-top:10px' });
+      var pr = el('button', { class: 'btn primary' }, '🖨 พิมพ์บัตร PIN'); pr.onclick = function () { window.print(); };
+      var dl = el('button', { class: 'btn' }, '⬇ CSV'); dl.onclick = function () { downloadText('PIN-นักศึกษา.csv', toCsv([['รหัส', 'ชื่อ', 'ห้อง', 'PIN']].concat(list.map(function (x) { return [x.studentCode, x.name, x.room || '', x.pin]; }))), 'text/csv'); };
+      row.appendChild(pr); row.appendChild(dl); m.appendChild(row);
+    }, { sticky: true });
+  }
+
+  /* ---------------- เกียรติบัตร ---------------- */
+  function vCerts() {
+    return Api.call('tCertificates').then(function (list) {
+      view.innerHTML = '<h1>เกียรติบัตรที่ออกแล้ว</h1>';
+      var c = el('div', { class: 'card' });
+      if (!list.length) { c.innerHTML = '<div class="empty"><span class="i">🏆</span>ยังไม่มีเกียรติบัตร<br><span class="small">ระบบออกให้อัตโนมัติเมื่อนักศึกษาผ่านภารกิจ</span></div>'; view.appendChild(c); return; }
+      var h = '<div class="tbl-wrap"><table class="tbl"><tr><th>เลขที่</th><th>นักศึกษา</th><th>เกียรติบัตร</th><th>ระดับ</th><th>วันที่</th><th></th></tr>';
+      list.forEach(function (x, i) { h += '<tr><td>' + esc(x.certNo) + '</td><td>' + esc(x.studentName) + '</td><td>' + esc(x.title) + '</td><td>' + (LEVEL_MEDAL[x.level] || '') + ' ' + esc(x.level) + ' (' + fmt(x.percent) + '%)</td><td class="small">' + thDate(x.issuedAt) + '</td><td><button class="btn sm" data-i="' + i + '">ดู</button> <button class="btn sm danger" data-rv="' + i + '">เพิกถอน</button></td></tr>'; });
+      c.innerHTML = h + '</table></div>';
+      $$('button[data-rv]', c).forEach(function (b) { b.onclick = function () {
+        var x = list[Number(b.dataset.rv)];
+        var reason = prompt('เพิกถอนเกียรติบัตร ' + x.certNo + ' ของ ' + x.studentName + '\nระบุเหตุผล (ลิงก์ตรวจสอบจะใช้ไม่ได้ทันที):');
+        if (reason === null) return;
+        Api.call('tRevokeCertificate', { certNo: x.certNo, reason: reason }).then(function () { toast('เพิกถอนแล้ว', 'ok'); show('certs'); }).catch(function (e) { toast(e.message, 'bad'); });
+      }; });
+      $$('button[data-i]', c).forEach(function (b) { b.onclick = function () { var x = list[Number(b.dataset.i)]; view.innerHTML = ''; var bk = el('button', { class: 'btn', style: 'margin-bottom:10px' }, '‹ กลับ'); bk.onclick = function () { show('certs'); }; view.appendChild(bk); Api.call('info').then(function (s) { CertView.render(view, x, s); }); }; });
+      view.appendChild(c);
+    });
+  }
+
+  /* ---------------- เนื้อหา ---------------- */
+  function vContent() {
+    return Api.call('tCourse').then(function (d) {
+      view.innerHTML = '<h1>เนื้อหา</h1><p class="small muted" style="margin-top:-6px">ภารกิจ = หน่วยการเรียนรู้ · แต่ละภารกิจมีใบความรู้ ใบงาน แบบฝึก และแบบทดสอบ แก้ไขได้โดยไม่ต้องแก้โค้ด</p>';
+      var bar = el('div', { class: 'row', style: 'margin-bottom:12px' });
+      var nu = el('button', { class: 'btn primary' }, '＋ เพิ่มภารกิจ'); nu.onclick = function () { editUnit({ order: d.units.length + 1, icon: '🎯', status: 'active' }); };
+      var ex = el('button', { class: 'btn' }, '⬇ ส่งออก JSON'); ex.onclick = function () { Api.call('tExportCourse').then(function (j) { downloadText('เนื้อหารายวิชา.json', JSON.stringify(j, null, 2), 'application/json'); }); };
+      var im = el('button', { class: 'btn' }, '⬆ นำเข้า JSON'); im.onclick = importCourse;
+      bar.appendChild(nu); bar.appendChild(ex); bar.appendChild(im); view.appendChild(bar);
+      if (!d.units.length) { var e = el('div', { class: 'card empty' }); e.innerHTML = '<span class="i">📚</span>ยังไม่มีเนื้อหา<br><span class="small">ใช้เมนู ⚙️ ตั้งค่าระบบ → ใส่เนื้อหาและนักศึกษาตัวอย่าง ใน Google Sheet หรือกด เพิ่มภารกิจ</span>'; view.appendChild(e); return; }
+      d.units.forEach(function (u) {
+        var c = el('div', { class: 'card' });
+        var head = el('div', { class: 'row' });
+        head.innerHTML = '<span style="font-size:1.6rem">' + esc(u.icon) + '</span><div class="grow"><b>ภารกิจที่ ' + esc(u.order) + ': ' + esc(u.title) + '</b>' + (u.status === 'hidden' ? ' <span class="chip">ซ่อน</span>' : '') + '<div class="small muted">' + esc(u.summary) + '</div></div>';
+        var eb = el('button', { class: 'btn sm' }, 'แก้ไข'); eb.onclick = function () { editUnit(u); }; head.appendChild(eb);
+        var ab = el('button', { class: 'btn sm' }, '＋ กิจกรรม'); ab.onclick = function () { editActivity({ unitId: u.id, order: d.activities.filter(function (a) { return a.unitId === u.id; }).length + 1, type: 'practice', status: 'active', dataJson: JSON.stringify(TEMPLATES.practice, null, 2) }, d.units); }; head.appendChild(ab);
+        c.appendChild(head);
+        var list = el('div', { class: 'acts', style: 'margin-top:10px' });
+        d.activities.filter(function (a) { return a.unitId === u.id; }).forEach(function (a) {
+          var r = el('div', { class: 'act', role: 'button' });
+          r.innerHTML = '<div class="ti">' + TYPE_ICON[a.type] + '</div><div class="tt"><span class="small muted">' + esc(a.order) + '. ' + esc(a.typeName) + '</span><b>' + esc(a.title) + '</b></div>' + (a.status === 'hidden' ? '<span class="chip">ซ่อน</span>' : '') + '<span>›</span>';
+          r.onclick = function () { editActivity(a, d.units); };
+          list.appendChild(r);
+        });
+        c.appendChild(list); view.appendChild(c);
+      });
+    });
+  }
+
+  function editUnit(u) {
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, u.id ? 'แก้ไขภารกิจ' : 'เพิ่มภารกิจ'));
+      var f = el('form');
+      f.innerHTML = '<div class="row"><div style="width:90px"><label class="f">ลำดับ</label><input class="in" name="order" type="number" min="1"></div><div style="width:90px"><label class="f">ไอคอน</label><input class="in" name="icon"></div><div class="grow"><label class="f">ชื่อภารกิจ</label><input class="in" name="title" required></div></div>' +
+        '<label class="f">เป้าหมายของภารกิจ</label><input class="in" name="mission"><label class="f">หัวข้อที่เรียน (สรุปสั้น)</label><input class="in" name="summary">' +
+        '<div class="row"><div class="grow"><label class="f">เกณฑ์ผ่าน (%) เว้นว่าง = ใช้ค่ากลาง ' + info.passPercent + '%</label><input class="in" name="passPercent" type="number" min="0" max="100"></div><div class="grow"><label class="f">สถานะ</label><select class="in" name="status"><option value="active">แสดง</option><option value="hidden">ซ่อน</option></select></div></div>';
+      ['order', 'icon', 'title', 'mission', 'summary', 'passPercent', 'status'].forEach(function (k) { f[k].value = u[k] === undefined || u[k] === null ? '' : u[k]; });
+      var b = el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:14px' }, 'บันทึก'); f.appendChild(b);
+      if (u.id) {
+        var del = el('button', { class: 'btn danger block', type: 'button', style: 'margin-top:8px' }, '🗑 ลบภารกิจนี้');
+        del.onclick = function () {
+          var ws = false; setTimeout(function () { var cb = $('#del-scores'); if (cb) cb.onchange = function () { ws = cb.checked; }; }, 0);
+          confirmBox('ลบภารกิจ "' + esc(u.title) + '"?', 'กิจกรรมทั้งหมดในภารกิจนี้จะถูกลบด้วย<br><label><input type="checkbox" id="del-scores"> ลบคะแนนของกิจกรรมเหล่านี้ด้วย (กู้คืนไม่ได้)</label>', 'ลบ').then(function (ok) {
+            if (!ok) return;
+            Api.call('tDeleteUnit', { unitId: u.id, cascade: true, withScores: ws }).then(function (r) { close(); toast('ลบภารกิจและ ' + r.activities + ' กิจกรรมแล้ว', 'ok'); show('content'); }).catch(function (e) { toast(e.message, 'bad'); });
+          });
+        };
+        f.appendChild(del);
+      }
+      f.onsubmit = function (e) { e.preventDefault(); var o = { id: u.id }; ['order', 'icon', 'title', 'mission', 'summary', 'passPercent', 'status'].forEach(function (k) { o[k] = f[k].value; }); withBusy(b, function () { return Api.call('tSaveUnit', { unit: o }).then(function () { close(); toast('บันทึกแล้ว', 'ok'); show('content'); }); }).catch(function () {}); };
+      m.appendChild(f);
+    });
+  }
+
+  var TEMPLATES = {
+    knowledge: { content: '# หัวข้อ\nอธิบายเนื้อหา\n\n```python\nprint("ตัวอย่างที่รันได้")\n```' },
+    worksheet: { intro: 'คำชี้แจง', maxAttempts: 3, tasks: [{ title: 'ข้อ 1', prompt: 'โจทย์', starterCode: '', sampleInput: '', hints: ['คำใบ้'], solution: 'print("สวัสดี")', tests: [{ input: '', expected: 'สวัสดี', score: 5 }] }] },
+    practice: { intro: 'ฝึกได้ไม่จำกัดครั้ง', tasks: [{ title: 'ข้อ 1', prompt: 'รับตัวเลข n แล้วแสดง n x 2', starterCode: 'n = int(input())\n', sampleInput: '4', hints: ['print(n * 2)'], solution: 'n = int(input())\nprint(n * 2)', tests: [{ input: '4', expected: '8', score: 3 }, { input: '10', expected: '20', score: 2, hidden: true }] }] },
+    quiz: { intro: 'คำชี้แจง', timeLimitMin: 10, maxAttempts: 2, shuffle: true, questions: [{ id: 'q1', type: 'mc', text: 'คำถาม', choices: ['ก', 'ข', 'ค', 'ง'], answer: 0, score: 1, explain: '' }, { id: 'q2', type: 'output', text: 'ผลลัพธ์คืออะไร', code: 'print(1 + 1)', answer: '2', score: 1 }] }
+  };
+
+  function editActivity(a, units) {
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, a.id ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม'));
+      var f = el('form');
+      f.innerHTML = '<div class="row"><div class="grow"><label class="f">ภารกิจ</label><select class="in" name="unitId"></select></div><div style="width:90px"><label class="f">ลำดับ</label><input class="in" name="order" type="number" min="1"></div></div>' +
+        '<div class="row"><div class="grow"><label class="f">ประเภท</label><select class="in" name="type"><option value="knowledge">📖 ใบความรู้</option><option value="worksheet">📝 ใบงาน</option><option value="practice">💻 แบบฝึกปฏิบัติ</option><option value="quiz">✅ แบบทดสอบ</option></select></div><div class="grow"><label class="f">สถานะ</label><select class="in" name="status"><option value="active">แสดง</option><option value="hidden">ซ่อน</option></select></div></div>' +
+        '<label class="f">ชื่อกิจกรรม</label><input class="in" name="title" required>' +
+        '<label class="f">ข้อมูลกิจกรรม (JSON)</label><textarea class="in mono" name="dataJson" rows="16" spellcheck="false" style="font-size:13px"></textarea>' +
+        '<details class="small"><summary>รูปแบบข้อมูล</summary><p>ใบความรู้: <code>content</code> เป็น Markdown บล็อก <code>```python</code> รันได้ทันที<br>ใบงาน/แบบฝึก: <code>tasks[]</code> แต่ละข้อมี title, prompt, starterCode, sampleInput, hints[], solution, tests[{input, expected, score, hidden, compare}] — compare: trim (ค่าเริ่มต้น) | exact | ignorespace | contains | number<br>แบบทดสอบ: <code>questions[]</code> type = mc (choices + answer เป็นตำแหน่งเริ่ม 0) | tf (answer true/false) | output (answer ผลลัพธ์) | fill (answer เป็นข้อความหรือรายการคำตอบที่ยอมรับ)</p></details>';
+      units.forEach(function (u) { f.unitId.appendChild(el('option', { value: u.id }, u.order + '. ' + u.title)); });
+      f.unitId.value = a.unitId; f.order.value = a.order || 1; f.type.value = a.type; f.status.value = a.status || 'active'; f.title.value = a.title || '';
+      try { f.dataJson.value = JSON.stringify(JSON.parse(a.dataJson || '{}'), null, 2); } catch (e) { f.dataJson.value = a.dataJson || ''; }
+      f.type.onchange = function () { if (!a.id && confirm('ใช้แม่แบบของประเภทนี้?')) f.dataJson.value = JSON.stringify(TEMPLATES[f.type.value], null, 2); };
+      var out = el('div', { class: 'small' });
+      var row = el('div', { class: 'row', style: 'margin-top:12px' });
+      var tb = el('button', { class: 'btn', type: 'button' }, '🧪 ทดสอบเฉลยกับชุดทดสอบ');
+      tb.onclick = function () { withBusy(tb, function () { return testSolutions(f.dataJson.value, out); }).catch(function () {}); };
+      var sb = el('button', { class: 'btn primary grow', type: 'submit' }, 'บันทึก');
+      row.appendChild(tb); row.appendChild(sb);
+      if (a.id) {
+        var db = el('button', { class: 'btn danger', type: 'button' }, '🗑 ลบ');
+        db.onclick = function () {
+          var ws = false; setTimeout(function () { var cb = $('#del-act-scores'); if (cb) cb.onchange = function () { ws = cb.checked; }; }, 0);
+          confirmBox('ลบกิจกรรม "' + esc(a.title) + '"?', 'นักศึกษาจะไม่เห็นกิจกรรมนี้อีก<br><label><input type="checkbox" id="del-act-scores"> ลบคะแนนของกิจกรรมนี้ด้วย (กู้คืนไม่ได้)</label><br><span class="small muted">ถ้าต้องการแค่ซ่อนชั่วคราว ให้เปลี่ยนสถานะเป็น "ซ่อน" แทน</span>', 'ลบ').then(function (ok) {
+            if (!ok) return;
+            Api.call('tDeleteActivity', { activityId: a.id, withScores: ws }).then(function () { close(); toast('ลบกิจกรรมแล้ว', 'ok'); show('content'); }).catch(function (e) { toast(e.message, 'bad'); });
+          });
+        };
+        row.appendChild(db);
+      }
+      f.appendChild(row); f.appendChild(out);
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        try { JSON.parse(f.dataJson.value); } catch (er) { toast('JSON ไม่ถูกต้อง: ' + er.message, 'bad'); return; }
+        var o = { id: a.id, unitId: f.unitId.value, order: f.order.value, type: f.type.value, status: f.status.value, title: f.title.value, dataJson: f.dataJson.value };
+        withBusy(sb, function () { return Api.call('tSaveActivity', { activity: o }).then(function () { close(); toast('บันทึกแล้ว', 'ok'); show('content'); }); }).catch(function () {});
+      };
+      m.appendChild(f);
+    });
+  }
+
+  /** รันเฉลย (solution) ของทุกข้อกับทุกชุดทดสอบ เพื่อตรวจว่าโจทย์ถูกต้องก่อนเผยแพร่ */
+  function testSolutions(json, out) {
+    var d; try { d = JSON.parse(json); } catch (e) { return Promise.reject(new Error('JSON ไม่ถูกต้อง')); }
+    if (!d.tasks) { out.innerHTML = '<p class="muted">ใช้ได้กับใบงานและแบบฝึกเท่านั้น</p>'; return Promise.resolve(); }
+    var html = [];
+    return d.tasks.reduce(function (p, t, i) {
+      return p.then(function () {
+        if (!t.solution) { html.push('<p>ข้อ ' + (i + 1) + ': <span class="chip wait">ไม่มี solution</span></p>'); return; }
+        return PyRunner.tests(t.solution, (t.tests || []).map(function (x) { return x.input || ''; })).then(function (rs) {
+          var bad = [];
+          rs.forEach(function (r, k) { if (r.error || r.timeout || !cmpOut(r.output, t.tests[k].expected, t.tests[k].compare)) bad.push('ชุด ' + (k + 1) + ': ได้ <code>' + esc(r.error ? thaiError(r.error).raw : r.output) + '</code> แต่ expected คือ <code>' + esc(t.tests[k].expected) + '</code>'); });
+          html.push('<p>ข้อ ' + (i + 1) + ' ' + esc(t.title || '') + ': ' + (bad.length ? '<span class="chip bad">ไม่ผ่าน ' + bad.length + '/' + rs.length + '</span><br>' + bad.join('<br>') : '<span class="chip ok">✓ เฉลยผ่านครบ ' + rs.length + ' ชุด</span>') + '</p>');
+        });
+      });
+    }, Promise.resolve()).then(function () { out.innerHTML = html.join(''); });
+  }
+
+  function importCourse() {
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, 'นำเข้าเนื้อหา (JSON)'));
+      m.appendChild(el('p', { class: 'small', style: 'color:var(--bad)' }, 'เนื้อหาเดิมทั้งหมดจะถูกแทนที่ คะแนนเดิมยังอยู่ถ้ารหัสกิจกรรม (id) ตรงกัน'));
+      var file = el('input', { type: 'file', accept: '.json,application/json', class: 'in' });
+      var t = el('textarea', { class: 'in mono', rows: 8, placeholder: 'หรือวาง JSON ที่นี่' });
+      file.onchange = function () { var fr = new FileReader(); fr.onload = function () { t.value = fr.result; }; if (file.files[0]) fr.readAsText(file.files[0]); };
+      var b = el('button', { class: 'btn primary block', style: 'margin-top:10px' }, 'นำเข้า');
+      b.onclick = function () { withBusy(b, function () { return Api.call('tImportCourse', { json: t.value }).then(function (r) { close(); toast('นำเข้า ' + r.units + ' ภารกิจแล้ว', 'ok'); show('content'); }); }).catch(function () {}); };
+      m.appendChild(file); m.appendChild(t); m.appendChild(b);
+    });
+  }
+
+  /* ---------------- ตั้งค่า ---------------- */
+  function vSettings() {
+    return Api.call('tSettings').then(function (d) {
+      view.innerHTML = '<h1>ตั้งค่าระบบ</h1><p class="small muted" style="margin-top:-6px">บันทึกลงแท็บ Settings ใน Google Sheet ทันที มีผลกับนักศึกษาทุกคนตั้งแต่การเปิดหน้าครั้งถัดไป</p>';
+      var c = el('div', { class: 'card' }); var f = el('form');
+      var groups = [['ข้อมูลสถานศึกษาและรายวิชา', ['schoolName', 'department', 'courseName', 'academicYear', 'semester']],
+        ['เกณฑ์การผ่านและคะแนน', ['passPercent', 'hintPenalty', 'lockSequential']],
+        ['เกียรติบัตร', ['certPrefix', 'signer1Name', 'signer1Position', 'signer2Name', 'signer2Position', 'logoUrl']],
+        ['หน้าเว็บและการเข้าถึง', ['primaryColor', 'publicUrl', 'adminEmails']]];
+      var by = {}; d.items.forEach(function (x) { by[x.key] = x; });
+      groups.forEach(function (g) {
+        f.appendChild(el('h3', {}, g[0]));
+        g[1].forEach(function (k) {
+          var it = by[k]; if (!it) return;
+          f.appendChild(el('label', { class: 'f', for: 'set-' + k }, it.help));
+          var inp;
+          if (k === 'lockSequential') { inp = el('select', { class: 'in', id: 'set-' + k, name: k }); inp.appendChild(el('option', { value: 'yes' }, 'yes — ต้องผ่านภารกิจก่อนหน้า')); inp.appendChild(el('option', { value: 'no' }, 'no — เปิดทุกภารกิจ')); }
+          else if (k === 'primaryColor') { inp = el('input', { class: 'in', id: 'set-' + k, name: k, type: 'color', style: 'max-width:120px;padding:4px' }); }
+          else inp = el('input', { class: 'in', id: 'set-' + k, name: k, inputmode: (k === 'passPercent' || k === 'hintPenalty') ? 'numeric' : null });
+          inp.value = it.value; inp.dataset.orig = inp.value;
+          f.appendChild(inp);
+        });
+      });
+      var bar = el('div', { class: 'sticky-foot', style: 'margin-top:14px' });
+      var info2 = el('span', { class: 'small grow muted' }, 'แก้แล้วกดบันทึก ระบบตรวจค่าที่ไม่ถูกต้องให้');
+      var reset = el('button', { class: 'btn', type: 'button' }, 'คืนค่าที่แก้');
+      var save = el('button', { class: 'btn primary', type: 'submit' }, '💾 บันทึกการตั้งค่า');
+      reset.onclick = function () { $$('[name]', f).forEach(function (x) { x.value = x.dataset.orig; }); };
+      bar.appendChild(info2); bar.appendChild(reset); bar.appendChild(save); f.appendChild(bar);
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        var patch = {}; $$('[name]', f).forEach(function (x) { if (x.value !== x.dataset.orig) patch[x.name] = x.value; });
+        if (!Object.keys(patch).length) { toast('ยังไม่ได้แก้ค่าใด'); return; }
+        withBusy(save, function () { return Api.call('tSaveSettings', { settings: patch }).then(function (r) { toast('บันทึก ' + r.saved.length + ' รายการแล้ว', 'ok'); if (patch.primaryColor) applyTheme({ primaryColor: patch.primaryColor }); show('settings'); }); }).catch(function () {});
+      };
+      c.appendChild(f); view.appendChild(c);
+
+      var pw = el('div', { class: 'card' });
+      pw.innerHTML = '<h3>เปลี่ยนรหัสผ่านครู</h3>';
+      var pf = el('form');
+      pf.innerHTML = (d.hasTeacherPassword ? '<label class="f">รหัสผ่านเดิม</label><input class="in" type="password" name="old" autocomplete="current-password">' : '') +
+        '<label class="f">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)</label><input class="in" type="password" name="new1" autocomplete="new-password"><label class="f">พิมพ์ซ้ำ</label><input class="in" type="password" name="new2" autocomplete="new-password">';
+      var pb = el('button', { class: 'btn primary', type: 'submit', style: 'margin-top:10px' }, 'เปลี่ยนรหัสผ่าน'); pf.appendChild(pb);
+      pf.onsubmit = function (e) {
+        e.preventDefault();
+        if (pf.new1.value !== pf.new2.value) { toast('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน', 'bad'); return; }
+        withBusy(pb, function () { return Api.call('tChangePassword', { oldPassword: pf.old ? pf.old.value : '', newPassword: pf.new1.value }).then(function () { toast('เปลี่ยนรหัสผ่านแล้ว', 'ok'); pf.reset(); }); }).catch(function () {});
+      };
+      pw.appendChild(pf); view.appendChild(pw);
+
+      var cx = el('div', { class: 'card' });
+      var mode = Api.mode();
+      cx.innerHTML = '<h3>การเชื่อมต่อฐานข้อมูล</h3><table class="tests"><tr><th>โหมด</th><td>' + (mode === 'github' ? 'GitHub Pages ↔ Google Sheet (Apps Script API)' : mode === 'sheet' ? 'Google Apps Script ↔ Google Sheet' : 'โหมดสาธิต (ข้อมูลอยู่ในเบราว์เซอร์นี้เท่านั้น)') + '</td></tr>' +
+        (mode === 'github' ? '<tr><th>API</th><td class="small" style="word-break:break-all">' + esc(Api.url()) + '</td></tr>' : '') +
+        '<tr><th>เวอร์ชัน</th><td>' + esc(d.version) + '</td></tr></table>';
+      var tb2 = el('button', { class: 'btn sm', style: 'margin-top:8px' }, '🔌 ทดสอบการเชื่อมต่อ');
+      tb2.onclick = function () { var t0 = Date.now(); withBusy(tb2, function () { return Api.call('ping').then(function (r) { toast('เชื่อมต่อได้ ใช้เวลา ' + (Date.now() - t0) + ' ms · ภารกิจ ' + r.units + ' · นักศึกษา ' + r.students + ' คน', 'ok'); }); }).catch(function () {}); };
+      cx.appendChild(tb2);
+      if (mode === 'demo') cx.appendChild(el('p', { class: 'small muted' }, 'ต่อ Google Sheet จริง: Deploy Apps Script แล้วใส่ลิงก์ /exec ใน config.js (ดู README หัวข้อ GitHub Pages)'));
+      view.appendChild(cx);
+    });
+  }
+
+  return { boot: boot };
+})();
+</script>

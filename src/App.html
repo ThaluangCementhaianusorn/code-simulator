@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ห้องเรียนเขียนโปรแกรม</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <main class="wrap"><div class="empty">กำลังเปิดห้องเรียน…</div></main>
+  <script>var BOOT = <?!= bootJson ?>;</script>
+  <?!= include('Lib') ?>
+  <?!= include('Runner') ?>
+  <?!= include('Cert') ?>
+  <?!= include('Student') ?>
+  <?!= include('Teacher') ?>
+  <script>
+    (function () {
+      Api.call('info').then(function (info) {
+        if (BOOT.page === 'cert') CertView.verifyPage(info, BOOT.cert, BOOT.code);
+        else if (BOOT.page === 'teacher') TeacherApp.boot(info);
+        else StudentApp.boot(info);
+      }).catch(function (e) {
+        document.body.innerHTML = '<main class="wrap"><div class="card empty"><span class="i">⚠️</span><b>เปิดระบบไม่สำเร็จ</b><br>' + esc(e.message) + '</div></main>';
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+# ส่งโค้ดใน src/ ขึ้น Google Apps Script และอัปเดต Web app เดิม (ลิงก์ /exec ไม่เปลี่ยน) ทุกครั้งที่ push เข้า main
+#
+# ตั้งค่าครั้งแรก (Settings → Secrets and variables → Actions → New repository secret):
+#   CLASPRC_JSON   เนื้อหาไฟล์ ~/.clasprc.json หลังรัน `clasp login` บนเครื่องตัวเอง
+#   SCRIPT_ID      Script ID ของโปรเจกต์ Apps Script (Project Settings → IDs)
+#   DEPLOYMENT_ID  (ไม่บังคับ) Deployment ID ของ Web app เดิม (Deploy → Manage deployments) เพื่ออัปเดตลิงก์เดิม
+# และเปิด Apps Script API ที่ https://script.google.com/home/usersettings
+name: Push to Google Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**']
+  workflow_dispatch:
+
+jobs:
+  clasp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: ทดสอบตรรกะหลักก่อนส่ง
+        run: node tools/test-core.js
+      - name: ติดตั้ง clasp
+        run: npm install -g @google/clasp@2.4.2
+      - name: เตรียมสิทธิ์และโปรเจกต์
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ]; then echo "ยังไม่ได้ตั้ง secrets CLASPRC_JSON / SCRIPT_ID"; exit 1; fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"src"}' "$SCRIPT_ID" > .clasp.json
+      - name: clasp push
+        run: clasp push --force
+      - name: อัปเดต Web app เดิม
+        env:
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+        run: |
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
+          else
+            echo "ไม่มี DEPLOYMENT_ID: ส่งโค้ดแล้ว แต่ต้อง Deploy เวอร์ชันใหม่เองใน Apps Script"
+          fi

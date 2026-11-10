@@ -1,0 +1,69 @@
+<!-- Cert.html — แสดง/พิมพ์เกียรติบัตร และหน้าตรวจสอบเกียรติบัตรสาธารณะ -->
+<script>
+var CertView = (function () {
+  function render(host, c, S) {
+    var bar = el('div', { class: 'row', style: 'margin-bottom:10px' });
+    var pb = el('button', { class: 'btn primary' }, '🖨 พิมพ์ / บันทึกเป็น PDF');
+    pb.onclick = function () { window.print(); };
+    bar.appendChild(pb);
+    if (c.verifyUrl) {
+      var cp = el('button', { class: 'btn' }, '🔗 คัดลอกลิงก์ตรวจสอบ');
+      cp.onclick = function () {
+        var done = function () { toast('คัดลอกลิงก์แล้ว', 'ok'); };
+        if (navigator.clipboard) navigator.clipboard.writeText(c.verifyUrl).then(done, function () { prompt('คัดลอกลิงก์นี้', c.verifyUrl); });
+        else prompt('คัดลอกลิงก์นี้', c.verifyUrl);
+      };
+      bar.appendChild(cp);
+      var op = el('a', { class: 'btn', href: c.verifyUrl, target: '_blank', rel: 'noopener' }, '↗ เปิดหน้าเต็ม');
+      bar.appendChild(op);
+    }
+    host.appendChild(bar);
+    host.appendChild(el('p', { class: 'small muted' }, 'เคล็ดลับ: ตอนพิมพ์ให้เลือกแนวนอน (Landscape) ขนาด A4 และปิด "ส่วนหัวและส่วนท้าย" ถ้าพิมพ์จากในแอปไม่ได้ ให้กด "เปิดหน้าเต็ม" แล้วพิมพ์จากหน้านั้น'));
+    var stage = el('div', { class: 'cert-stage print-area' });
+    var cert = el('div', { class: 'cert' });
+    var isCourse = c.unitId === 'COURSE';
+    var lvKey = LEVEL_KEY[c.level] || 'bronze';
+    cert.innerHTML =
+      '<div class="corner" style="left:22px;top:22px"></div><div class="corner" style="right:22px;bottom:22px;transform:rotate(180deg)"></div>' +
+      '<div class="frame"></div><div class="inner">' +
+      (S.logoUrl ? '<img class="logo" alt="" src="' + esc(S.logoUrl) + '">' : '<div class="emblem">' + (isCourse ? '🎓' : '🏅') + '</div>') +
+      '<div class="school">' + esc(S.schoolName) + (S.department ? ' · ' + esc(S.department) : '') + '</div>' +
+      '<div class="title">เกียรติบัตร</div>' +
+      '<div class="given">ฉบับนี้ให้ไว้เพื่อแสดงว่า</div>' +
+      '<div class="name">' + esc(c.studentName) + '</div>' +
+      '<div class="meta">รหัสนักศึกษา ' + esc(c.studentCode) + (c.room ? ' · ' + esc(c.room) : '') + '</div>' +
+      '<div class="what">' + (isCourse ? 'ได้ผ่านการเรียนรู้ครบทุกภารกิจ และ<b>' + esc(c.title) + '</b>' : 'ได้ปฏิบัติ<b>' + esc(c.title) + '</b> สำเร็จ') +
+      '<br>รายวิชา ' + esc(S.courseName) + ' ภาคเรียนที่ ' + esc(S.semester) + '/' + esc(S.academicYear) + '</div>' +
+      '<div class="level ' + lvKey + '">' + (LEVEL_MEDAL[c.level] || '') + ' ระดับ' + esc(c.level) + ' · ' + fmt(c.percent) + '%</div>' +
+      '<div class="date">ให้ไว้ ณ วันที่ ' + thDate(c.issuedAt, true) + '</div>' +
+      '<div class="signs">' + sign(S.signer1Name, S.signer1Position) + sign(S.signer2Name, S.signer2Position) + '</div>' +
+      '</div><div class="foot"><div>เลขที่ ' + esc(c.certNo) + '<br>ตรวจสอบความถูกต้องได้ด้วยการสแกน QR Code</div><div class="qr"></div></div>';
+    stage.appendChild(cert);
+    host.appendChild(stage);
+    var qr = $('.qr', cert);
+    if (c.verifyUrl && window.QRCode) { try { new QRCode(qr, { text: c.verifyUrl, width: 72, height: 72, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { qr.remove(); } } else qr.remove();
+    function fit() { var w = stage.clientWidth || host.clientWidth || 360, k = Math.min(1, w / 1123); cert.style.transform = 'scale(' + k + ')'; stage.style.height = (794 * k) + 'px'; }
+    fit(); window.addEventListener('resize', fit); setTimeout(fit, 50);
+  }
+  function sign(name, pos) {
+    return '<div class="sign"><div class="ln"></div>' + (name ? '(' + esc(name) + ')<br>' : '(.............................................)<br>') + esc(pos || '') + '</div>';
+  }
+  /** หน้าตรวจสอบสาธารณะ: ?cert=เลขที่&code=รหัสตรวจสอบ */
+  function verifyPage(info, certNo, code) {
+    applyTheme(info);
+    document.body.innerHTML = '';
+    var top = el('header', { class: 'topbar' }); top.innerHTML = '<div class="brand">ตรวจสอบเกียรติบัตร<small>' + esc(info.schoolName) + '</small></div>';
+    var main = el('main', { class: 'wrap wide' });
+    document.body.appendChild(top); document.body.appendChild(main);
+    Api.call('getCertificate', { certNo: certNo, code: code }).then(function (r) {
+      var ok = el('div', { class: 'card row', style: 'background:var(--ok-soft)' });
+      ok.innerHTML = '<span style="font-size:2rem">✅</span><div><b>เกียรติบัตรนี้ออกโดยระบบจริง</b><div class="small">' + esc(r.cert.studentName) + ' · ' + esc(r.cert.title) + ' · ออกเมื่อ ' + thDate(r.cert.issuedAt, true) + '</div></div>';
+      main.appendChild(ok);
+      render(main, r.cert, r.settings);
+    }).catch(function (e) {
+      main.innerHTML = '<div class="card empty"><span class="i">❌</span><b>ตรวจสอบไม่ผ่าน</b><br>' + esc(e.message) + '</div>';
+    });
+  }
+  return { render: render, verifyPage: verifyPage };
+})();
+</script>

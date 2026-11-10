@@ -1,0 +1,191 @@
+<!-- Lib.html — ตัวช่วยทั่วไป: เรียก API, สร้าง element, toast, modal, Markdown, วันที่ไทย -->
+<script>
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function el(tag, attrs, text) {
+  var e = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function (k) { if (attrs[k] !== undefined && attrs[k] !== null && attrs[k] !== false) e.setAttribute(k, attrs[k]); });
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function $(sel, root) { return (root || document).querySelector(sel); }
+function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+function store(k, v) {
+  try { if (v === undefined) { var x = localStorage.getItem(k); return x === null ? null : JSON.parse(x); } if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; }
+}
+
+/* ---------- API ---------- */
+var Api = {
+  token: null,
+  /** ลิงก์ Apps Script /exec จาก config.js (GitHub Pages) */
+  url: function () { return (window.CS_CONFIG && /^https:\/\/script\.google(usercontent)?\.com\//.test(CS_CONFIG.apiUrl || '')) ? CS_CONFIG.apiUrl : ''; },
+  /** sheet = Apps Script โดยตรง · github = GitHub Pages ต่อ Google Sheet · demo = ข้อมูลในเบราว์เซอร์ */
+  mode: function () { return (window.google && google.script && google.script.run) ? 'sheet' : Api.url() ? 'github' : 'demo'; },
+  call: function (method, payload) {
+    var p = Object.assign({ token: Api.token }, payload || {});
+    return new Promise(function (resolve, reject) {
+      function fail(e) {
+        var msg = String((e && e.message) || e || 'เกิดข้อผิดพลาด').replace(/^(Error|Exception|ข้อผิดพลาด):\s*/i, '');
+        if (/เข้าสู่ระบบ/.test(msg) && Api.onAuthLost) Api.onAuthLost(msg);
+        reject(new Error(msg));
+      }
+      if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(fail).api(method, p);
+      } else if (Api.url()) {
+        // หน้าเว็บบน GitHub Pages → เรียก Apps Script Web App (Google Sheet) โดยตรง
+        // ใช้ text/plain เพื่อไม่ให้เบราว์เซอร์ส่ง CORS preflight (Apps Script ไม่รองรับ OPTIONS)
+        fetch(Api.url(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ method: method, payload: p }) })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function (j) { if (j.ok) resolve(j.data); else fail(new Error(j.error)); })
+          .catch(function (e) { fail(/HTTP|Failed to fetch|NetworkError|JSON/.test(String(e && e.message)) ? new Error('เชื่อมต่อฐานข้อมูล Google Sheet ไม่ได้ (' + e.message + ') ตรวจลิงก์ apiUrl ใน config.js และการ Deploy แบบ Anyone') : e); });
+      } else if (window.DemoBackend) {
+        setTimeout(function () { try { resolve(JSON.parse(JSON.stringify(DemoBackend.api(method, p)))); } catch (e) { fail(e); } }, 120);
+      } else fail(new Error('ไม่พบเซิร์ฟเวอร์ (เปิดผ่านลิงก์ Web app)'));
+    });
+  }
+};
+
+/** ปุ่มแสดงสถานะกำลังทำงาน: withBusy(btn, promiseFn) */
+function withBusy(btn, fn) {
+  if (btn.disabled) return Promise.resolve();
+  var old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> ' + (btn.dataset.busy || 'กำลังทำงาน…');
+  return Promise.resolve().then(fn).catch(function (e) { toast(e.message || String(e), 'bad'); throw e; })
+    .finally(function () { btn.disabled = false; btn.innerHTML = old; });
+}
+
+function toast(msg, cls) {
+  var box = $('#toast'); if (!box) { box = el('div', { id: 'toast' }); document.body.appendChild(box); }
+  var d = el('div', { class: cls || '' }, msg); box.appendChild(d);
+  setTimeout(function () { d.remove(); }, cls === 'bad' ? 5000 : 3000);
+}
+
+function modal(build, opts) {
+  opts = opts || {};
+  var bg = el('div', { class: 'modal-bg' }), m = el('div', { class: 'modal', role: 'dialog' });
+  var x = el('button', { class: 'x', type: 'button', 'aria-label': 'ปิด' }, '✕');
+  m.appendChild(x); bg.appendChild(m); document.body.appendChild(bg);
+  function close() { bg.remove(); if (opts.onClose) opts.onClose(); }
+  x.onclick = close; bg.addEventListener('click', function (e) { if (e.target === bg && !opts.sticky) close(); });
+  build(m, close);
+  return close;
+}
+
+function confirmBox(title, text, okLabel) {
+  return new Promise(function (res) {
+    modal(function (m, close) {
+      m.appendChild(el('h2', {}, title));
+      var p = el('p'); p.innerHTML = text; m.appendChild(p);
+      var row = el('div', { class: 'row' });
+      var no = el('button', { class: 'btn grow' }, 'ยกเลิก'), ok = el('button', { class: 'btn primary grow' }, okLabel || 'ยืนยัน');
+      no.onclick = function () { res(false); close(); }; ok.onclick = function () { res(true); close(); };
+      row.appendChild(no); row.appendChild(ok); m.appendChild(row);
+    }, { onClose: function () { res(false); } });
+  });
+}
+
+/* ---------- วันที่แบบไทย ---------- */
+function thDate(iso, long) {
+  if (!iso) return '-';
+  var d = new Date(iso); if (isNaN(d)) return '-';
+  return d.toLocaleDateString('th-TH', long ? { day: 'numeric', month: 'long', year: 'numeric' } : { day: 'numeric', month: 'short', year: '2-digit' });
+}
+function thDateTime(iso) { if (!iso) return '-'; var d = new Date(iso); return thDate(iso) + ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); }
+function fmt(n) { return n === null || n === undefined || n === '' ? '-' : (Math.round(Number(n) * 10) / 10).toLocaleString('th-TH'); }
+
+var TYPE_ICON = { knowledge: '📖', worksheet: '📝', practice: '💻', quiz: '✅' };
+var LEVEL_MEDAL = { 'ดีเยี่ยม': '🥇', 'ดีมาก': '🥈', 'ผ่าน': '🥉', gold: '🥇', silver: '🥈', bronze: '🥉' };
+var LEVEL_KEY = { 'ดีเยี่ยม': 'gold', 'ดีมาก': 'silver', 'ผ่าน': 'bronze' };
+
+/* ---------- Markdown แบบย่อ (escape ทุกอย่างก่อน จึงปลอดภัยจาก XSS) ---------- */
+function mdInline(s) {
+  s = esc(s);
+  s = s.replace(/`([^`]+)`/g, function (_, c) { return '<code>' + c + '</code>'; });
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+  s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g, '<img alt="$1" src="$2">');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+/**
+ * mdRender(text, { onCode(lang, code, flags) → Element|null })
+ * คืน DocumentFragment
+ */
+function mdRender(text, opts) {
+  opts = opts || {};
+  var root = el('div', { class: 'md' });
+  var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  var i = 0, html = [];
+  function flush() { if (html.length) { var d = el('div'); d.innerHTML = html.join(''); while (d.firstChild) root.appendChild(d.firstChild); html = []; } }
+  while (i < lines.length) {
+    var ln = lines[i];
+    var fence = ln.match(/^```\s*([\w-]*)\s*(.*)$/);
+    if (fence) {
+      var lang = fence[1] || 'text', flags = fence[2] || '', buf = [];
+      i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++;
+      var code = buf.join('\n');
+      flush();
+      var node = opts.onCode ? opts.onCode(lang, code, flags) : null;
+      if (!node) { node = el('pre', { class: 'code' }); node.textContent = code; }
+      root.appendChild(node);
+      continue;
+    }
+    if (/^\s*$/.test(ln)) { i++; continue; }
+    var h = ln.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { var lv = Math.min(4, h[1].length + 1); html.push('<h' + lv + '>' + mdInline(h[2]) + '</h' + lv + '>'); i++; continue; }
+    if (/^>\s?/.test(ln)) {
+      var q = []; while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(lines[i].replace(/^>\s?/, '')); i++; }
+      html.push('<blockquote>' + q.map(mdInline).join('<br>') + '</blockquote>'); continue;
+    }
+    if (/^\|/.test(ln)) {
+      var rows = []; while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+      var cells = function (r) { return r.replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map(function (c) { return c.trim(); }); };
+      var t = '<table><thead><tr>' + cells(rows[0]).map(function (c) { return '<th>' + mdInline(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      rows.slice(1).filter(function (r) { return !/^\|[\s:|-]+$/.test(r); }).forEach(function (r) {
+        t += '<tr>' + cells(r).map(function (c) { return '<td>' + mdInline(c) + '</td>'; }).join('') + '</tr>';
+      });
+      html.push(t + '</tbody></table>'); continue;
+    }
+    if (/^\s*[-*]\s+/.test(ln)) {
+      var li = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { li.push('<li>' + mdInline(lines[i].replace(/^\s*[-*]\s+/, '')) + '</li>'); i++; }
+      html.push('<ul>' + li.join('') + '</ul>'); continue;
+    }
+    if (/^\s*\d+[.)]\s+/.test(ln)) {
+      var ol = []; while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) { ol.push('<li>' + mdInline(lines[i].replace(/^\s*\d+[.)]\s+/, '')) + '</li>'); i++; }
+      html.push('<ol>' + ol.join('') + '</ol>'); continue;
+    }
+    var para = [];
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^(```|#{1,4}\s|>|\||\s*[-*]\s+|\s*\d+[.)]\s+)/.test(lines[i])) { para.push(lines[i]); i++; }
+    html.push('<p>' + para.map(mdInline).join('<br>') + '</p>');
+  }
+  flush();
+  return root;
+}
+
+function downloadText(filename, text, mime) {
+  try {
+    var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+    var a = el('a', { href: URL.createObjectURL(blob), download: filename });
+    document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 500);
+  } catch (e) {
+    modal(function (m) { m.appendChild(el('h2', {}, 'คัดลอกข้อมูล')); var t = el('textarea', { class: 'in mono', rows: 12 }); t.value = text; m.appendChild(t); });
+  }
+}
+function toCsv(rows) {
+  return '﻿' + rows.map(function (r) { return r.map(function (c) { c = c === null || c === undefined ? '' : String(c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(','); }).join('\r\n');
+}
+
+function confetti() {
+  var colors = ['#1E40AF', '#F59E0B', '#059669', '#DC2626', '#8B5CF6', '#EC4899'];
+  for (var i = 0; i < 80; i++) {
+    var c = el('div', { class: 'confetti' });
+    c.style.left = Math.random() * 100 + 'vw'; c.style.background = colors[i % colors.length];
+    c.style.animationDuration = (1.8 + Math.random() * 1.8) + 's'; c.style.animationDelay = (Math.random() * .6) + 's';
+    document.body.appendChild(c); (function (n) { setTimeout(function () { n.remove(); }, 4500); })(c);
+  }
+}
+
+function applyTheme(settings) {
+  if (settings && /^#[0-9a-f]{6}$/i.test(settings.primaryColor || '')) document.documentElement.style.setProperty('--primary', settings.primaryColor);
+}
+</script>
