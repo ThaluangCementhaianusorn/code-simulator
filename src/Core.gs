@@ -205,7 +205,7 @@ function syncCertificates_(store, student, course, prog, S) {
   var targets = [];
   course.units.forEach(function (u, i) {
     var p = prog.unitById[u.id];
-    if (p && p.passed) targets.push({ unitId: u.id, title: (p.bonus ? 'ภารกิจพิเศษ: ' : 'ภารกิจที่ ' + (i + 1) + ': ') + u.title, percent: p.percent });
+    if (p && p.passed) targets.push({ unitId: u.id, title: 'ภารกิจที่ ' + (i + 1) + ': ' + u.title + (p.bonus ? ' (คะแนนพิเศษ)' : ''), percent: p.percent });
   });
   if (prog.allPassed) targets.push({ unitId: 'COURSE', title: 'สำเร็จหลักสูตร ' + S.courseName, percent: prog.percent });
   var seq = certs.length;

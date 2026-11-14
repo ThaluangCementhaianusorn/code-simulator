@@ -88,7 +88,7 @@ var TeacherApp = (function () {
       var c3 = Charts.card('ผู้ผ่านรายภารกิจ', 'ร้อยละของนักศึกษาที่ผ่าน · ชี้เพื่อดูค่าเฉลี่ย', 'span2');
       Charts.hbars(c3, d.units.map(function (x) {
         var p = d.kpi.students ? x.passed / d.kpi.students * 100 : 0;
-        return { label: (x.bonus ? '⭐ ' : x.no + '. ') + x.title, value: p, text: x.passed + '/' + d.kpi.students, ok: p >= 80,
+        return { label: x.no + '. ' + x.title + (x.bonus ? ' ⭐' : ''), value: p, text: x.passed + '/' + d.kpi.students, ok: p >= 80,
           tip: '<b>' + esc(x.title) + '</b><br>เริ่มแล้ว ' + x.started + ' คน · ผ่าน ' + x.passed + ' คน<br>คะแนนเฉลี่ย ' + fmt(x.avg) + '%' };
       }), { unit: '%' });
       dg.appendChild(c3);
@@ -104,7 +104,7 @@ var TeacherApp = (function () {
       }
       var g = el('div', { class: 'grid2' });
       var u = el('div', { class: 'card' }); var t = '<h3>ผลรายภารกิจ</h3><div class="tbl-wrap"><table class="tbl"><tr><th>ภารกิจ</th><th class="num">เริ่มแล้ว</th><th class="num">ผ่าน</th><th>เฉลี่ย</th></tr>';
-      d.units.forEach(function (x) { t += '<tr><td>' + esc(x.icon) + ' ' + (x.bonus ? '⭐' : x.no + '.') + ' ' + esc(x.title) + '</td><td class="num">' + x.started + '</td><td class="num"><b>' + x.passed + '</b>/' + d.kpi.students + '</td><td style="min-width:110px"><div class="row"><div class="bar grow"><i style="width:' + x.avg + '%"></i></div><span class="small">' + fmt(x.avg) + '%</span></div></td></tr>'; });
+      d.units.forEach(function (x) { t += '<tr><td>' + esc(x.icon) + ' ' + x.no + '. ' + esc(x.title) + (x.bonus ? ' ⭐' : '') + '</td><td class="num">' + x.started + '</td><td class="num"><b>' + x.passed + '</b>/' + d.kpi.students + '</td><td style="min-width:110px"><div class="row"><div class="bar grow"><i style="width:' + x.avg + '%"></i></div><span class="small">' + fmt(x.avg) + '%</span></div></td></tr>'; });
       u.innerHTML = t + '</table></div>';
       g.appendChild(u);
       var todo = el('div', { class: 'card' });
@@ -138,7 +138,7 @@ var TeacherApp = (function () {
       var c2 = Charts.card('คะแนนเฉลี่ยรายภารกิจ', 'ร้อยละ · ทุกห้อง', 'span2');
       Charts.columns(c2, d.units.map(function (u) {
         var avg = live.length ? live.reduce(function (s2, r) { return s2 + (r.units[u.id] ? r.units[u.id].percent : 0); }, 0) / live.length : 0;
-        return { label: u.bonus ? '⭐' : String(u.no), title: (u.bonus ? '⭐ ' : 'ภารกิจที่ ' + u.no + ' ') + u.title, value: Math.round(avg * 10) / 10 };
+        return { label: String(u.no), title: 'ภารกิจที่ ' + u.no + ' ' + u.title + (u.bonus ? ' ⭐ คะแนนพิเศษ' : ''), value: Math.round(avg * 10) / 10 };
       }), { unit: '%', max: 100, height: 130, labelEvery: 1, xName: 'ภารกิจ', yName: 'เฉลี่ย (%)' });
       dg.appendChild(c2);
       view.appendChild(dg);
@@ -165,7 +165,7 @@ var TeacherApp = (function () {
         var h = '<div class="small muted" style="margin-bottom:6px">' + rows.length + ' คน · แตะชื่อเพื่อดูรายละเอียด ดูโค้ดที่ส่ง และปรับคะแนน</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>ห้อง</th>';
         d.units.forEach(function (u) {
           if (state.detail) d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { h += '<th class="num" title="' + esc(a.title) + '">' + u.no + '.' + TYPE_ICON[a.type] + '<br><span class="small muted">/' + fmt(a.max) + '</span></th>'; });
-          h += '<th class="num" title="' + esc(u.title) + '">' + (u.bonus ? '⭐ พิเศษ' : 'ภารกิจ ' + u.no) + '</th>';
+          h += '<th class="num" title="' + esc(u.title) + '">' + ('ภารกิจ ' + u.no + (u.bonus ? ' ⭐' : '')) + '</th>';
         });
         h += '<th class="num">รวม</th><th>สถานะ</th><th class="num" title="จำนวนครั้งที่ระบบแจ้งเตือนทุจริต">🚨</th></tr></thead><tbody>';
         rows.forEach(function (r) {
@@ -185,7 +185,7 @@ var TeacherApp = (function () {
 
   function exportCsv(d, rows) {
     var head = ['รหัสนักศึกษา', 'ชื่อ-สกุล', 'ห้อง'];
-    d.units.forEach(function (u) { d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { head.push(a.title + ' (' + a.max + ')'); }); var nm = u.bonus ? 'ภารกิจพิเศษ' : 'ภารกิจ ' + u.no; head.push(nm + ' (%)'); head.push(nm + ' ระดับ'); });
+    d.units.forEach(function (u) { d.activities.filter(function (a) { return a.unitId === u.id && a.max > 0; }).forEach(function (a) { head.push(a.title + ' (' + a.max + ')'); }); var nm = 'ภารกิจ ' + u.no + (u.bonus ? ' (คะแนนพิเศษ)' : ''); head.push(nm + ' (%)'); head.push(nm + ' ระดับ'); });
     head.push('คะแนนรวม'); head.push('คะแนนเต็ม'); head.push('ร้อยละรวม'); head.push('คะแนนพิเศษ'); head.push('แจ้งเตือนทุจริต (ครั้ง)');
     var out = [head];
     rows.forEach(function (r) {
@@ -462,14 +462,14 @@ var TeacherApp = (function () {
         var maxOf = function (a) { try { var x = JSON.parse(a.dataJson || '{}'); if (a.type === 'quiz') return (x.questions || []).reduce(function (s2, q) { return s2 + (Number(q.score) || 1); }, 0); return (x.tasks || []).reduce(function (s2, t) { return s2 + (t.tests || []).reduce(function (s3, z) { return s3 + (Number(z.score) || 1); }, 0); }, 0); } catch (e) { return 0; } };
         var sums = d.units.map(function (u) { var acts = d.activities.filter(function (a) { return a.unitId === u.id && a.status !== 'hidden'; }); return { u: u, n: acts.length, max: acts.reduce(function (s2, a) { return s2 + maxOf(a); }, 0) }; });
         var mx = Math.max.apply(null, sums.map(function (x) { return x.max; }).concat([1]));
-        Charts.hbars(cc, sums.map(function (x) { return { label: (x.u.kind === 'bonus' ? '⭐ ' : x.u.order + '. ') + x.u.title, value: x.max, text: fmt(x.max) + ' คะแนน', muted: x.u.status === 'hidden', tip: '<b>' + esc(x.u.title) + '</b><br>' + x.n + ' กิจกรรม · ' + fmt(x.max) + ' คะแนน' + (x.u.kind === 'bonus' ? '<br>⭐ คะแนนพิเศษ (แยกจากคะแนนหลัก)' : '') + (x.u.status === 'hidden' ? '<br>ซ่อนอยู่' : '') }; }), { max: mx });
+        Charts.hbars(cc, sums.map(function (x) { return { label: x.u.order + '. ' + x.u.title + (x.u.kind === 'bonus' ? ' ⭐' : ''), value: x.max, text: fmt(x.max) + ' คะแนน', muted: x.u.status === 'hidden', tip: '<b>' + esc(x.u.title) + '</b><br>' + x.n + ' กิจกรรม · ' + fmt(x.max) + ' คะแนน' + (x.u.kind === 'bonus' ? '<br>⭐ คะแนนพิเศษ (แยกจากคะแนนหลัก)' : '') + (x.u.status === 'hidden' ? '<br>ซ่อนอยู่' : '') }; }), { max: mx });
         view.appendChild(cc);
       }
       if (!d.units.length) { var e = el('div', { class: 'card empty' }); e.innerHTML = '<span class="i">📚</span>ยังไม่มีเนื้อหา<br><span class="small">ใช้เมนู ⚙️ ตั้งค่าระบบ → ใส่เนื้อหาและนักศึกษาตัวอย่าง ใน Google Sheet หรือกด เพิ่มภารกิจ</span>'; view.appendChild(e); return; }
       d.units.forEach(function (u) {
         var c = el('div', { class: 'card' });
         var head = el('div', { class: 'row' });
-        head.innerHTML = '<span style="font-size:1.6rem">' + esc(u.icon) + '</span><div class="grow"><b>' + (u.kind === 'bonus' ? '⭐ ภารกิจพิเศษ' : 'ภารกิจที่ ' + esc(u.order)) + ': ' + esc(u.title) + '</b>' + (u.kind === 'bonus' ? ' <span class="chip wait">คะแนนพิเศษ</span>' : '') + (u.status === 'hidden' ? ' <span class="chip">ซ่อน</span>' : '') + '<div class="small muted">' + esc(u.summary) + '</div></div>';
+        head.innerHTML = '<span style="font-size:1.6rem">' + esc(u.icon) + '</span><div class="grow"><b>' + 'ภารกิจที่ ' + esc(u.order) + ': ' + esc(u.title) + '</b>' + (u.kind === 'bonus' ? ' <span class="chip wait">คะแนนพิเศษ</span>' : '') + (u.status === 'hidden' ? ' <span class="chip">ซ่อน</span>' : '') + '<div class="small muted">' + esc(u.summary) + '</div></div>';
         var eb = el('button', { class: 'btn sm' }, 'แก้ไข'); eb.onclick = function () { editUnit(u); }; head.appendChild(eb);
         var ab = el('button', { class: 'btn sm' }, '＋ กิจกรรม'); ab.onclick = function () { editActivity({ unitId: u.id, order: d.activities.filter(function (a) { return a.unitId === u.id; }).length + 1, type: 'practice', status: 'active', dataJson: JSON.stringify(TEMPLATES.practice, null, 2) }, d.units); }; head.appendChild(ab);
         c.appendChild(head);

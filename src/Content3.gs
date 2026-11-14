@@ -35,7 +35,8 @@ function dbGradeOf_() {
     '  if (score >= 60) return 2;', '  if (score >= 55) return 1.5;', '  if (score >= 50) return 1;', '  return 0;', '}'];
 }
 
-function unit11_() {
+/** เนื้อหาต้นฉบับทั้งชุด (ใช้แยกเป็นภารกิจที่ 11–15 ใน dbUnits_) */
+function dbParts_() {
   return {
     id: 'U11', order: 11, kind: 'bonus', icon: '🗄️', title: 'ภารกิจฐานข้อมูลด้วย Google Sheets',
     mission: 'ใช้ Google Sheet หลายแท็บเป็นฐานข้อมูล แก้ปัญหางานจริงในวิทยาลัย 5 ระบบ (คะแนนพิเศษ แยกจากคะแนนหลัก)',
@@ -370,4 +371,131 @@ function unit11_() {
         ] } }
     ]
   };
+}
+
+/**
+ * ภารกิจที่ 11–15: แยกภารกิจฐานข้อมูลเป็น 5 ภารกิจ (ภารกิจละ ใบความรู้ + ใบงาน 10 คะแนน + แบบทดสอบ 2 ข้อ)
+ * kind: 'bonus' = คะแนนพิเศษ แยกจากคะแนนหลัก (ครูเปลี่ยนเป็นภารกิจหลักได้ที่หน้าครู → เนื้อหา → แก้ไขภารกิจ)
+ */
+function dbUnits_() {
+  var P = dbParts_(), acts = P.activities;
+  var tasks = acts[1].data.tasks.concat(acts[2].data.tasks);
+  var qById = {}; acts[3].data.questions.forEach(function (q) { qById[q.id] = q; });
+  // แบ่งใบความรู้ตามหัวข้อ ## …
+  var sec = {}, cur = 'intro';
+  acts[0].data.content.split('\n').forEach(function (ln) {
+    var m = ln.match(/^## (\S+)/); if (m) cur = m[1].replace(/\.$/, '');
+    (sec[cur] = sec[cur] || []).push(ln);
+  });
+  function S(k) { return (sec[k] || []).join('\n'); }
+  var intro = S('intro'), cmds = S('คำสั่งที่ใช้บ่อย');
+  var EX_GROUP = L_('## สรุปยอดแบบจัดกลุ่ม (GROUP BY) และสร้างตารางรายงาน',
+    'นับจำนวนตามกลุ่มด้วย object ที่ใช้รหัสเป็นคีย์ แล้วเขียนผลลงแท็บรายงาน ถ้าแท็บมีอยู่แล้วต้อง `clear()` ก่อน เพื่อให้**รันซ้ำได้โดยข้อมูลไม่ค้าง**',
+    '```gas',
+    'function loanReport() {',
+    '  const ss = SpreadsheetApp.getActive();',
+    '  const loans = ss.getSheetByName("Loans").getDataRange().getValues().slice(1);',
+    '  const count = {};                                   // { รหัสนักเรียน: จำนวนครั้ง }',
+    '  loans.forEach(r => { count[r[1]] = (count[r[1]] || 0) + 1; });',
+    '  let rep = ss.getSheetByName("LoanReport");',
+    '  if (!rep) rep = ss.insertSheet("LoanReport"); else rep.clear();',
+    '  const out = [["รหัสนักเรียน", "จำนวนครั้งที่ยืม"]].concat(Object.keys(count).map(k => [k, count[k]]));',
+    '  rep.getRange(1, 1, out.length, 2).setValues(out);    // เขียนครั้งเดียวทั้งตาราง (เร็วกว่าเขียนทีละช่อง)',
+    '  console.log("สร้างรายงาน", out.length - 1, "แถว ดูแท็บ LoanReport");',
+    '}',
+    'loanReport();',
+    'loanReport(); // รันซ้ำแล้วข้อมูลไม่ซ้อน',
+    '```',
+    '',
+    '> 💡 ร้อยละทศนิยม 1 ตำแหน่ง: `Number((x / total * 100).toFixed(1))` · เทียบเกณฑ์ด้วย `>=` เพื่อให้ 80.0 พอดีผ่านเกณฑ์');
+  var EX_FLOW = L_('## ควบคุมลำดับขั้นตอนด้วย object (State machine) และบันทึกประวัติ (Audit log)',
+    'เก็บ "ขั้นที่ไปต่อได้" ของแต่ละสถานะไว้ใน object แล้วตรวจด้วย `includes` ก่อนเปลี่ยน ทุกครั้งที่เปลี่ยนให้เพิ่มแถวในตารางประวัติ จึงย้อนดูได้ว่าใครเปลี่ยนอะไรเมื่อไร',
+    '```gas',
+    'const LOAN_FLOW = { "ยืมอยู่": ["คืนแล้ว", "สูญหาย"], "คืนแล้ว": [], "สูญหาย": [] };',
+    'function setLoanStatus(loanId, next, by) {',
+    '  const ss = SpreadsheetApp.getActive();',
+    '  const sh = ss.getSheetByName("Loans");',
+    '  const data = sh.getDataRange().getValues();',
+    '  const i = data.findIndex((r, k) => k > 0 && r[0] === loanId);',
+    '  if (i < 0) return "ไม่พบรายการ";',
+    '  const from = data[i][4];',
+    '  if (!LOAN_FLOW[from].includes(next)) return "เปลี่ยนจาก " + from + " เป็น " + next + " ไม่ได้";',
+    '  sh.getRange(i + 1, 5).setValue(next);                    // Soft delete: เปลี่ยนสถานะ ไม่ลบแถว',
+    '  let log = ss.getSheetByName("LoanLog") || ss.insertSheet("LoanLog");',
+    '  if (log.getLastRow() === 0) log.appendRow(["เวลา", "เลขที่", "จาก", "เป็น", "โดย"]);',
+    '  log.appendRow([Utilities.formatDate(new Date(), "Asia/Bangkok", "dd/MM/yyyy HH:mm:ss"), loanId, from, next, by]);',
+    '  return "สำเร็จ";',
+    '}',
+    'console.log(setLoanStatus("L0001", "คืนแล้ว", "ครูสมศรี"));   // สำเร็จ',
+    'console.log(setLoanStatus("L0001", "ยืมอยู่", "ครูสมศรี"));   // ย้อนขั้นไม่ได้',
+    '```');
+  var EX_GPA = L_('## ค่าเฉลี่ยถ่วงน้ำหนัก (GPA) และส่งอีเมล',
+    'GPA = Σ(เกรด × หน่วยกิต) ÷ Σหน่วยกิต ทำ object ค้นหาวิชาจากรหัสก่อน (JOIN) แล้วรวมผล คนที่ไม่มีอีเมลให้ข้ามการส่ง แต่ยังคำนวณให้',
+    '```gas',
+    'const subjects = { "WEB": { name: "การพัฒนาเว็บแอปพลิเคชัน", credit: 3 }, "ENG": { name: "ภาษาอังกฤษ", credit: 2 }, "PE": { name: "พลศึกษา", credit: 1 } };',
+    'const grades = [["WEB", 4], ["ENG", 3], ["PE", 2]];       // [รหัสวิชา, เกรด]',
+    'let points = 0, credits = 0;',
+    'const lines = grades.map(([code, g]) => {',
+    '  const s = subjects[code];',
+    '  points += g * s.credit; credits += s.credit;',
+    '  return "- " + s.name + " (" + s.credit + " หน่วยกิต) เกรด " + g;',
+    '});',
+    'const gpa = Math.round(points / credits * 100) / 100;',
+    'console.log("GPA =", gpa.toFixed(2));                       // (12 + 6 + 2) ÷ 6 = 3.33',
+    'MailApp.sendEmail("parent@example.com", "ผลการเรียน ภาคเรียนที่ 1", lines.join("\\n") + "\\nGPA = " + gpa.toFixed(2));',
+    'console.log("อีเมลคงเหลือวันนี้", MailApp.getRemainingDailyQuota());',
+    '```',
+    '',
+    '> 💡 Gmail ส่งได้จำกัดต่อวัน (บัญชีทั่วไปประมาณ 100 ฉบับ) ระบบจริงควรตรวจ `MailApp.getRemainingDailyQuota()` ก่อนส่ง');
+  var EX_PCT = L_('## คำนวณร้อยละและตัดสินตามเกณฑ์',
+    'เมื่อนับได้แล้ว ให้คิดร้อยละจากจำนวนทั้งหมดของกลุ่มนั้น ปัดทศนิยม 1 ตำแหน่ง แล้วเทียบเกณฑ์',
+    '```gas',
+    'const items = SpreadsheetApp.getActive().getSheetByName("Items").getDataRange().getValues().slice(1);',
+    'const free = items.filter(r => r[2] === "ว่าง").length;',
+    'const pct = Number((free / items.length * 100).toFixed(1));',
+    'console.log("ครุภัณฑ์ว่าง", free + "/" + items.length, "=", pct + "%", pct >= 50 ? "เพียงพอ" : "ไม่พอให้ยืม");',
+    '```');
+  var EX_FIND = L_('## ค้นหาตามสถานะ (WHERE สถานะ = …)',
+    'งานที่มีขั้นตอน มักต้องแสดงรายการตามสถานะ เช่น "งานที่ยังไม่เสร็จ" ใช้ `filter` กับคอลัมน์สถานะ',
+    '```gas',
+    'const loans = SpreadsheetApp.getActive().getSheetByName("Loans").getDataRange().getValues().slice(1);',
+    'const open = loans.filter(r => r[4] === "ยืมอยู่");',
+    'console.log("ยังไม่คืน", open.length, "รายการ:", open.map(r => r[0] + " (" + r[2] + ")").join(", "));',
+    '```');
+  var plan = [
+    { no: 11, icon: '🧰', title: 'ฐานข้อมูล 1: ระบบยืมครุภัณฑ์แผนกช่าง', task: 0, q: ['q2', 'q5'],
+      mission: 'ออกแบบตาราง Students / Items / Loans ค้นหาข้ามตาราง และสร้างเลขที่การยืมอัตโนมัติ',
+      summary: 'Sheets เป็นฐานข้อมูล • Primary/Foreign Key • getValues • Lookup ข้ามตาราง • Running number',
+      know: [intro, S('1'), S('2'), S('3'), cmds] },
+    { no: 12, icon: '🗓️', title: 'ฐานข้อมูล 2: สรุปเวลาเรียนและสิทธิ์สอบ', task: 1, q: ['q4', 'q9'],
+      mission: 'สรุปเวลาเรียนแบบจัดกลุ่ม สร้างตารางรายงานอัตโนมัติ และตัดสิทธิ์สอบตามเกณฑ์ 80%',
+      summary: 'Aggregate (GROUP BY) • insertSheet / clear • setValues ทั้งตาราง • ออกแบบให้รันซ้ำได้',
+      know: [intro, S('1'), EX_GROUP, EX_PCT, cmds] },
+    { no: 13, icon: '🛒', title: 'ฐานข้อมูล 3: ร้านค้าสหกรณ์ ตัดสต็อกอัตโนมัติ', task: 2, q: ['q6', 'q7'],
+      mission: 'รับคำสั่งซื้อหลายรายการโดยสต็อกไม่ติดลบ ทำทั้งหมดหรือไม่ทำเลย และกันการเขียนชนกัน',
+      summary: 'Transaction • ตรวจก่อนเขียน • LockService • try/finally • คำนวณยอดเงิน',
+      know: [S('4'), S('5'), S('3'), cmds] },
+    { no: 14, icon: '🛠️', title: 'ฐานข้อมูล 4: ระบบแจ้งซ่อม ห้ามข้ามขั้นตอน', task: 3, q: ['q8', 'q1'],
+      mission: 'ควบคุมสถานะใบแจ้งซ่อมให้เดินตามขั้นตอน และบันทึกประวัติทุกการเปลี่ยนแปลง',
+      summary: 'State machine ด้วย object • Business rules • Audit log • Soft delete',
+      know: [S('Soft'), EX_FIND, EX_FLOW, S('3'), cmds] },
+    { no: 15, icon: '📧', title: 'ฐานข้อมูล 5: ใบแจ้งผลการเรียนและ GPA', task: 4, q: ['q10', 'q3'],
+      mission: 'เชื่อมข้อมูล 3 ตาราง คำนวณ GPA ถ่วงหน่วยกิต และส่งผลการเรียนถึงผู้ปกครองทางอีเมล',
+      summary: 'JOIN 3 ตาราง • ค่าเฉลี่ยถ่วงน้ำหนัก • MailApp • จัดการข้อมูลไม่ครบ',
+      know: [S('1'), S('2'), EX_GPA, cmds] }
+  ];
+  return plan.map(function (u) {
+    var id = 'U' + u.no, tk = tasks[u.task];
+    return { id: id, order: u.no, kind: 'bonus', icon: u.icon, title: u.title, mission: u.mission, summary: u.summary,
+      activities: [
+        { id: id + '-K', order: 1, type: 'knowledge', title: 'ใบความรู้ที่ ' + u.no + ': ' + u.title.replace(/^ฐานข้อมูล \d: /, ''), data: { content: u.know.join('\n\n') } },
+        { id: id + '-W', order: 2, type: 'worksheet', title: 'ใบงานที่ ' + u.no + ': ' + tk.title.replace(/^ภารกิจที่ \d /, ''), data: {
+          intro: 'เขียนฟังก์ชัน Apps Script ที่อ่าน/เขียน Google Sheet หลายแท็บ กด **▶ รัน** เพื่อเรียกคำสั่งในช่อง "เรียกใช้" แล้วดูผลในแต่ละแท็บ · **🧪 ตรวจกับตัวอย่าง** ก่อนส่ง · ส่งได้ 3 ครั้ง ใช้คะแนนดีที่สุด · ชุดตรวจบางชุดใช้**ข้อมูลชุดซ่อน** จึงห้ามเขียนผลลัพธ์ตายตัว',
+          maxAttempts: 3, tasks: [tk] } },
+        { id: id + '-Q', order: 3, type: 'quiz', title: 'แบบทดสอบภารกิจที่ ' + u.no, data: {
+          intro: 'แบบทดสอบ 2 ข้อ เวลา 5 นาที ทำได้ 2 ครั้ง ระบบสุ่มลำดับข้อและตัวเลือก ห้ามออกจากหน้าสอบระหว่างทำ',
+          timeLimitMin: 5, maxAttempts: 2, shuffle: true, shuffleChoices: true,
+          questions: u.q.map(function (k) { return qById[k]; }) } }
+      ] };
+  });
 }

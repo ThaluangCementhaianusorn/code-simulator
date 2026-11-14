@@ -27,7 +27,7 @@ var WS_INTRO_ = 'เขียนโค้ดในช่องแก้ไข �
 var PR_INTRO_ = 'ฝึกได้ไม่จำกัดครั้ง ระบบเก็บคะแนนครั้งที่ดีที่สุด การเปิดคำใบ้จะหักคะแนนข้อนั้นตามที่ครูตั้งไว้';
 
 function getSeedCourse_() {
-  return { format: 'code-simulator-course', units: [unit1_(), unit2_(), unit3_(), unit4_(), unit5_(), unit6_(), unit7_(), unit8_(), unit9_(), unit10_(), unit11_()] };
+  return { format: 'code-simulator-course', units: [unit1_(), unit2_(), unit3_(), unit4_(), unit5_(), unit6_(), unit7_(), unit8_(), unit9_(), unit10_()].concat(dbUnits_()) };
 }
 
 /* ======================= ภารกิจที่ 1 ======================= */

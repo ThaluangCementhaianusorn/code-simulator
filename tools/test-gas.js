@@ -54,16 +54,16 @@ async function score(task, code) {
     assert.deepStrictEqual(r.logs, ['ค่า 5']);
   });
 
-  const unit = ctx0.seed.units.find(u => u.id === 'U11');
-  console.log('ภารกิจฐานข้อมูล (' + unit.title + ')');
-  await t('เป็นภารกิจคะแนนพิเศษ มี 4 กิจกรรม และแบบทดสอบ 10 ข้อ (คำตอบกระจาย ก ข ค ง)', async () => {
-    assert.strictEqual(unit.kind, 'bonus');
-    assert.strictEqual(unit.activities.map(a => a.type).join(','), 'knowledge,worksheet,practice,quiz');
-    const q = unit.activities[3].data.questions; assert.strictEqual(q.length, 10);
+  const units = ctx0.seed.units.filter(u => u.kind === 'bonus');
+  console.log('ภารกิจฐานข้อมูล (ภารกิจที่ 11–15)');
+  await t('ภารกิจที่ 11–15 เป็นคะแนนพิเศษ ภารกิจละ ใบความรู้ ใบงาน แบบทดสอบ รวม 10 ข้อ (คำตอบกระจาย ก ข ค ง)', async () => {
+    assert.strictEqual(units.map(u => u.id).join(','), 'U11,U12,U13,U14,U15');
+    units.forEach(u => assert.strictEqual(u.activities.map(a => a.type).join(','), 'knowledge,worksheet,quiz', u.id));
+    const q = [].concat(...units.map(u => u.activities[2].data.questions)); assert.strictEqual(q.length, 10); assert.strictEqual(new Set(q.map(x => x.id)).size, 10);
     assert.ok([0, 1, 2, 3].every(i => q.some(x => x.answer === i)));
-    unit.activities.forEach(a => { assert.ok(JSON.stringify(a.data).length < 49000, a.id + ' ยาวเกิน 1 ช่องของชีต'); });
+    [].concat(...units.map(u => u.activities)).forEach(a => { assert.ok(JSON.stringify(a.data).length < 49000, a.id + ' ยาวเกิน 1 ช่องของชีต'); });
   });
-  const tasks = [].concat(...unit.activities.filter(a => a.data.tasks).map(a => a.data.tasks));
+  const tasks = [].concat(...units.map(u => u.activities[1].data.tasks));
   await t('5 ภารกิจ ภารกิจละ 10 คะแนน ทุกภารกิจมีชุดซ่อนที่ใช้ข้อมูลของตัวเอง', async () => {
     assert.strictEqual(tasks.length, 5);
     tasks.forEach(k => {
@@ -89,9 +89,9 @@ async function score(task, code) {
     const k = tasks[0]; const s = await score(k, k.solution.replace('const id = "L" + String(Number(lastId.slice(1)) + 1).padStart(4, "0");', 'const id = "L0002";'));
     assert.ok(s.got < 10 && s.bad.some(b => /ชุดซ่อน/.test(b)), JSON.stringify(s));
   });
-  await t('ใบความรู้: ตัวอย่าง ```gas ทุกบล็อกรันได้ไม่มี error', async () => {
-    const blocks = []; unit.activities[0].data.content.replace(/```gas\n([\s\S]*?)\n```/g, (m, c) => blocks.push(c));
-    assert.ok(blocks.length >= 5, 'ควรมีอย่างน้อย 5 บล็อก (5 หัวข้อ)');
+  await t('ใบความรู้ทั้ง 5 ภารกิจ: ตัวอย่าง ```gas ทุกบล็อกรันได้ไม่มี error', async () => {
+    const blocks = []; units.forEach(u => { const before = blocks.length; u.activities[0].data.content.replace(/```gas\n([\s\S]*?)\n```/g, (m, c) => blocks.push(c)); assert.ok(blocks.length > before, u.id + ' ต้องมีตัวอย่างที่รันได้'); });
+    assert.ok(blocks.length >= 8, 'มี ' + blocks.length + ' บล็อก');
     const sample = vm.runInContext('(' + wr.slice(wr.indexOf('var SAMPLE_SHEETS = '), wr.indexOf('function freshSheets()')).replace('var SAMPLE_SHEETS = ', '').trim().replace(/;$/, '') + ')', vm.createContext({}));
     for (const [i, b] of blocks.entries()) {
       const r = await runCheck(b, 'return 1', JSON.parse(JSON.stringify(sample)));
@@ -106,8 +106,8 @@ async function score(task, code) {
     ctx0.seedSampleData_(store, true);
     const tok = ctx0.coreApi(store, 'login', { studentCode: '692010001', pin: '1234' }).token;
     const m = ctx0.coreApi(store, 'courseMap', { token: tok });
-    const b = m.units.find(u => u.bonus);
-    assert.ok(b && !b.locked, 'ภารกิจพิเศษต้องเปิดได้ทันที');
+    const b = m.units.filter(u => u.bonus);
+    assert.strictEqual(m.units.length, 15); assert.strictEqual(b.length, 5); assert.ok(b.every(u => !u.locked), 'ภารกิจพิเศษต้องเปิดได้ทันที');
     assert.strictEqual(m.bonus.max, 60);
     assert.strictEqual(m.overall.max, m.units.filter(u => !u.bonus).reduce((s, u) => s + u.max, 0));
   });

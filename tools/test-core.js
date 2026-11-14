@@ -25,16 +25,16 @@ t('compareOutput_ โหมดต่าง ๆ', () => {
 });
 t('เนื้อหาตัวอย่าง: ทุกกิจกรรมผ่านการตรวจรูปแบบ', () => {
   const c = JSON.parse(JSON.stringify(ctx.getSeedCourse_()));
-  assert.strictEqual(c.units.length, 11); // 10 ภารกิจหลัก + ภารกิจฐานข้อมูล (คะแนนพิเศษ)
-  assert.strictEqual(c.units.filter(u => u.kind === 'bonus').length, 1);
-  c.units.forEach(u => { assert.deepStrictEqual(u.activities.map(a => a.type), ['knowledge', 'worksheet', 'practice', 'quiz']); u.activities.forEach(a => vm.runInContext('validateActivityData_', ctx)(a.type, a.data)); });
+  assert.strictEqual(c.units.length, 15); // 10 ภารกิจหลัก + ภารกิจฐานข้อมูล 11–15 (คะแนนพิเศษ)
+  assert.strictEqual(c.units.filter(u => u.kind === 'bonus').length, 5);
+  c.units.forEach(u => { assert.deepStrictEqual(u.activities.map(a => a.type), u.kind === 'bonus' ? ['knowledge', 'worksheet', 'quiz'] : ['knowledge', 'worksheet', 'practice', 'quiz']); u.activities.forEach(a => vm.runInContext('validateActivityData_', ctx)(a.type, a.data)); });
 });
 
 console.log('ติดตั้งและข้อมูลตัวอย่าง');
 t('seedSampleData_ ใส่เนื้อหาและนักศึกษา 10 คน', () => {
   const r = ctx.seedSampleData_(store, true);
-  assert.strictEqual(r.students, 10); assert.strictEqual(r.units, 11);
-  assert.strictEqual(store.all('Units').length, 11); assert.strictEqual(store.all('Activities').length, 44);
+  assert.strictEqual(r.students, 10); assert.strictEqual(r.units, 15);
+  assert.strictEqual(store.all('Units').length, 15); assert.strictEqual(store.all('Activities').length, 55);
   assert.ok(store.all('Certificates').length > 0, 'ควรมีเกียรติบัตรของนักศึกษาตัวอย่าง');
   assert.strictEqual(ctx.seedSampleData_(store, false).students, 0, 'รันซ้ำไม่สร้างซ้ำ');
 });
@@ -50,8 +50,8 @@ t('API นักศึกษาต้องมี token', () => throws(() => api
 let map;
 t('courseMap: ภารกิจ 1 เปิด ภารกิจ 2–5 ล็อก', () => {
   map = api('courseMap', { token: tok });
-  assert.strictEqual(map.units.length, 11);
-  assert.deepStrictEqual(map.units.map(u => u.locked), [false].concat(Array(9).fill(true), [false])); // ภารกิจพิเศษเปิดเสมอ
+  assert.strictEqual(map.units.length, 15);
+  assert.deepStrictEqual(map.units.map(u => u.locked), [false].concat(Array(9).fill(true), Array(5).fill(false))); // ภารกิจพิเศษเปิดเสมอ
   assert.strictEqual(map.overall.percent, 0);
 });
 t('เปิดกิจกรรมในภารกิจที่ล็อกไม่ได้', () => throws(() => api('getActivity', { token: tok, activityId: 'U2-K' }), /ล็อก/));
@@ -111,7 +111,7 @@ t('ส่งแบบทดสอบ → ผ่านภารกิจ 1 → �
   assert.strictEqual(r.newCertificates[0].level, 'ดีเยี่ยม');
   throws(() => api('submitQuiz', { token: tok, sessionId: sess.sessionId, answers: ans }), /ไปแล้ว/);
   map = api('courseMap', { token: tok });
-  assert.deepStrictEqual(map.units.map(u => u.locked), [false, false].concat(Array(8).fill(true), [false]));
+  assert.deepStrictEqual(map.units.map(u => u.locked), [false, false].concat(Array(8).fill(true), Array(5).fill(false)));
 });
 t('แบบทดสอบ: ครั้งสุดท้ายเฉลย, เกินสิทธิ์ไม่ได้, ส่งหลังหมดเวลาได้ 0', () => {
   const s2 = api('startQuiz', { token: tok, activityId: 'U1-Q' });
@@ -154,9 +154,9 @@ t('login ครู', () => {
 t('นักศึกษาเรียก API ครูไม่ได้', () => throws(() => api('tGradebook', { token: tok }), /สิทธิ์ครู/));
 t('dashboard + gradebook', () => {
   const d = api('tDashboard', { token: tt });
-  assert.strictEqual(d.kpi.students, 10); assert.ok(d.kpi.finished >= 2); assert.strictEqual(d.units.length, 11);
+  assert.strictEqual(d.kpi.students, 10); assert.ok(d.kpi.finished >= 2); assert.strictEqual(d.units.length, 15);
   const g = api('tGradebook', { token: tt });
-  assert.strictEqual(g.rows.length, 10); assert.strictEqual(g.activities.length, 44);
+  assert.strictEqual(g.rows.length, 10); assert.strictEqual(g.activities.length, 55);
   assert.ok(g.rows.find(r => r.student.studentCode === '692010001').allPassed);
 });
 t('ปรับคะแนน: ต้องมีเหตุผล ไม่เกินคะแนนเต็ม และออกเกียรติบัตรถ้าผ่าน', () => {
@@ -191,7 +191,7 @@ t('แก้ไขกิจกรรม: ตรวจ JSON และรูปแ
 });
 t('ส่งออก → นำเข้าเนื้อหา (คะแนนเดิมยังอยู่)', () => {
   const ex = api('tExportCourse', { token: tt });
-  assert.strictEqual(ex.units.length, 11); assert.strictEqual(ex.units[10].kind, 'bonus');
+  assert.strictEqual(ex.units.length, 15); assert.strictEqual(ex.units[10].kind, 'bonus');
   ex.units[0].activities = ex.units[0].activities.filter(a => a.title !== 'ฝึกเพิ่ม');
   api('tImportCourse', { token: tt, json: JSON.stringify(ex) });
   const m = api('courseMap', { token: tok });
@@ -249,7 +249,7 @@ t('ลบกิจกรรม และลบภารกิจ (ต้อง�
   api('tSaveActivity', { token: tt, activity: { unitId: u.id, type: 'knowledge', title: 'k', dataJson: '{"content":"x"}' } });
   throws(() => api('tDeleteUnit', { token: tt, unitId: u.id }), /ยืนยัน/);
   api('tDeleteUnit', { token: tt, unitId: u.id, cascade: true });
-  assert.strictEqual(api('tCourse', { token: tt }).units.length, 11);
+  assert.strictEqual(api('tCourse', { token: tt }).units.length, 15);
 });
 t('ลบนักศึกษาแบบซ่อน → กู้คืน → ลบถาวร (ต้องพิมพ์รหัสยืนยัน)', () => {
   const s = store.all('Students').find(x => x.studentCode === '692010002');
@@ -356,7 +356,7 @@ t('ภารกิจพิเศษ: ไม่นับรวมคะแนน
   const before = api('courseMap', { token: t2 });
   const bonus = before.units.find(u => u.bonus);
   assert.ok(!bonus.locked);
-  seed.units.find(u => u.id === 'U11').activities.forEach(a => {
+  [].concat(...seed.units.filter(u => u.kind === 'bonus').map(u => u.activities)).forEach(a => {
     if (a.type === 'knowledge') api('markRead', { token: t2, activityId: a.id });
     else if (a.type === 'quiz') { const q = api('startQuiz', { token: t2, activityId: a.id }); const ans = {}; a.data.questions.forEach(x => { ans[x.id] = x.answer; }); api('submitQuiz', { token: t2, sessionId: q.sessionId, answers: ans }); }
     else api('submitTasks', { token: t2, activityId: a.id, tasks: a.data.tasks.map(tk => ({ code: tk.solution, outputs: tk.tests.map(x => x.expected) })) });
@@ -364,9 +364,10 @@ t('ภารกิจพิเศษ: ไม่นับรวมคะแนน
   const after = api('courseMap', { token: t2 });
   assert.strictEqual(after.bonus.earned, 60); assert.strictEqual(after.bonus.max, 60);
   assert.strictEqual(after.overall.earned, before.overall.earned, 'คะแนนหลักต้องไม่เปลี่ยน');
-  assert.ok(after.certificates.some(c => c.unitId === 'U11' && /^ภารกิจพิเศษ/.test(c.title)));
+  assert.strictEqual(after.certificates.filter(c => /^U1[1-5]$/.test(c.unitId)).length, 5);
+  assert.ok(after.certificates.some(c => c.unitId === 'U11' && /คะแนนพิเศษ/.test(c.title)));
 });
-t('ping สำหรับทดสอบการเชื่อมต่อ', () => { const p = api('ping', {}); assert.ok(p.ok); assert.strictEqual(p.units, 11); });
+t('ping สำหรับทดสอบการเชื่อมต่อ', () => { const p = api('ping', {}); assert.ok(p.ok); assert.strictEqual(p.units, 15); });
 
 t('ล้างข้อมูลตัวอย่าง', () => {
   const n = ctx.clearSampleData_(store);
