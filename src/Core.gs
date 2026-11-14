@@ -44,6 +44,7 @@ var DEFAULT_SETTINGS = {
   signer2Position: 'ผู้อำนวยการ',
   signer1Sig: '',
   signer2Sig: '',
+  logoImg: '',
   integrityPenalty: '10',
   quizMaxStrikes: '2',
   adminEmails: '',
@@ -243,7 +244,7 @@ function publicSettings_(S, store) {
 /** ค่าที่ใช้พิมพ์เกียรติบัตร = publicSettings + ภาพลายเซ็น (ไม่ส่งไปทุกหน้าเพราะข้อมูลภาพมีขนาดใหญ่) */
 function certSettings_(S, store) {
   var o = publicSettings_(S, store);
-  o.signer1Sig = S.signer1Sig || ''; o.signer2Sig = S.signer2Sig || '';
+  o.signer1Sig = S.signer1Sig || ''; o.signer2Sig = S.signer2Sig || ''; o.logoImg = S.logoImg || '';
   return o;
 }
 
@@ -1031,6 +1032,7 @@ var SETTINGS_HELP = {
   signer1Position: 'ตำแหน่งผู้ลงนามคนที่ 1',
   signer2Name: 'ชื่อผู้ลงนามคนที่ 2 (เช่น ผู้อำนวยการ)',
   signer2Position: 'ตำแหน่งผู้ลงนามคนที่ 2',
+  logoImg: 'ภาพตราสถานศึกษาบนเกียรติบัตร (อัปโหลดจากหน้าครู → ตั้งค่า) เว้นว่าง = ใช้ logoUrl หรือตราวิทยาลัยที่ติดตั้งมากับระบบ',
   signer1Sig: 'ภาพลายเซ็นผู้ลงนามคนที่ 1 (ครูผู้สอน) อัปโหลดจากหน้าครู → ตั้งค่า',
   signer2Sig: 'ภาพลายเซ็นผู้ลงนามคนที่ 2 (ผู้อำนวยการ) อัปโหลดจากหน้าครู → ตั้งค่า',
   integrityPenalty: 'หักคะแนนต่อการทุจริต 1 ครั้ง (% ของคะแนนเต็มกิจกรรม) เช่น วางข้อความจากภายนอก ออกจากหน้าสอบ',
@@ -1041,7 +1043,7 @@ var SETTINGS_HELP = {
 
 function validateSetting_(k, v) {
   v = String(v === undefined || v === null ? '' : v).trim();
-  if (k === 'signer1Sig' || k === 'signer2Sig') {
+  if (k === 'signer1Sig' || k === 'signer2Sig' || k === 'logoImg') {
     if (v && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(v)) fail_('ลายเซ็นต้องเป็นไฟล์ภาพ PNG / JPG');
     if (v.length > 45000) fail_('ไฟล์ลายเซ็นใหญ่เกินไป (ต้องไม่เกินประมาณ 33 KB) ลองครอปให้เหลือเฉพาะลายเซ็น');
     return v;

@@ -707,7 +707,7 @@ var TeacherApp = (function () {
   }
   function signatureCard(by) {
     var c = el('div', { class: 'card' });
-    c.innerHTML = '<h3>✍️ ลายเซ็นบนเกียรติบัตร</h3><p class="small muted" style="margin-top:-4px">อัปโหลดภาพลายเซ็น (ถ่ายบนกระดาษขาวด้วยปากกาสีเข้ม หรือไฟล์ PNG พื้นโปร่งใส) หรือเซ็นบนหน้าจอ ระบบทำพื้นหลังโปร่งใสและย่อขนาดให้อัตโนมัติ แล้วนำไปพิมพ์บนเกียรติบัตรทุกใบทันที</p>';
+    c.innerHTML = '<h3>✍️ ลายเซ็นและตราบนเกียรติบัตร</h3><p class="small muted" style="margin-top:-4px">อัปโหลดภาพลายเซ็น (ถ่ายบนกระดาษขาวด้วยปากกาสีเข้ม หรือไฟล์ PNG พื้นโปร่งใส) หรือเซ็นบนหน้าจอ ระบบทำพื้นหลังโปร่งใสและย่อขนาดให้อัตโนมัติ แล้วนำไปพิมพ์บนเกียรติบัตรทุกใบทันที</p>';
     var g = el('div', { class: 'sig-grid' });
     [['signer1', 'ครูผู้สอน'], ['signer2', 'ผู้อำนวยการ']].forEach(function (x) {
       var key = x[0] + 'Sig', name = (by[x[0] + 'Name'] || {}).value || '', pos = (by[x[0] + 'Position'] || {}).value || x[1];
@@ -737,6 +737,31 @@ var TeacherApp = (function () {
       box.appendChild(row); box.appendChild(file); g.appendChild(box);
     });
     c.appendChild(g);
+    // ----- ตราสถานศึกษา -----
+    var lg = el('div', { class: 'sig-box', style: 'margin-top:14px' });
+    lg.innerHTML = '<div class="small muted">ตราสถานศึกษาบนเกียรติบัตร (PNG พื้นโปร่งใสจะสวยที่สุด)</div>';
+    var lp = el('div', { class: 'logo-prev' });
+    var curLogo = (by.logoImg || {}).value || '';
+    function showLogo() { lp.innerHTML = '<img alt="ตราสถานศึกษา" src="' + esc(curLogo || (by.logoUrl || {}).value || CERT_DEFAULT_LOGO) + '"><span class="small muted">' + (curLogo ? 'ใช้ภาพที่อัปโหลด (เก็บใน Google Sheet)' : 'ใช้ตราเริ่มต้นของระบบ') + '</span>'; }
+    showLogo(); lg.appendChild(lp);
+    var lf = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', class: 'hidden' });
+    var lr = el('div', { class: 'row' });
+    var lu = el('button', { class: 'btn sm', type: 'button' }, '⬆ อัปโหลดตรา'), ld = el('button', { class: 'btn sm', type: 'button' }, 'ใช้ตราเริ่มต้น');
+    function saveLogo(u) { return Api.call('tSaveSettings', { settings: { logoImg: u } }).then(function () { curLogo = u; showLogo(); toast(u ? 'บันทึกตราสถานศึกษาแล้ว' : 'กลับไปใช้ตราเริ่มต้นแล้ว', 'ok'); }).catch(function (e) { toast(e.message, 'bad'); }); }
+    lu.onclick = function () { lf.click(); };
+    lf.onchange = function () {
+      var f = lf.files[0]; if (!f) return; var fr = new FileReader();
+      fr.onload = function () { var im = new Image(); im.onload = function () {
+        var k = Math.min(1, 260 / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+        var u = cv.toDataURL('image/webp', 0.9); if (!/^data:image\/webp/.test(u) || u.length > 45000) u = cv.toDataURL('image/png');
+        if (u.length > 45000) { toast('ภาพตรายังใหญ่เกินไปหลังย่อ ลองใช้ไฟล์ที่เรียบง่ายกว่า', 'bad'); return; }
+        saveLogo(u);
+      }; im.src = fr.result; };
+      fr.readAsDataURL(f); lf.value = '';
+    };
+    ld.onclick = function () { if (curLogo) saveLogo(''); };
+    lr.appendChild(lu); lr.appendChild(ld); lg.appendChild(lr); lg.appendChild(lf); c.appendChild(lg);
     return c;
   }
 
