@@ -35,6 +35,7 @@ const backend = [
   src('Core.gs'),
   src('Content.gs'),
   src('Content2.gs'),
+  src('Content3.gs'),
   `var DemoBackend = null;
 if (!(window.CS_CONFIG && window.CS_CONFIG.apiUrl)) DemoBackend = (function () {
   var KEY = 'cs_demo_db_v3', db = null, timer = null;

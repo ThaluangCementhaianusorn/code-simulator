@@ -11,7 +11,7 @@ function onOpen() {
     .addItem('3) ใส่เนื้อหาและนักศึกษาตัวอย่าง', 'seedSample')
     .addSeparator()
     .addItem('ล้างนักศึกษาตัวอย่าง', 'clearSample')
-    .addItem('ใส่เนื้อหา 5 ภารกิจใหม่ (แทนที่ของเดิม)', 'reseedContent')
+    .addItem('ใส่เนื้อหาตัวอย่างใหม่ (แทนที่ของเดิม)', 'reseedContent')
     .addSeparator()
     .addItem('เปิดลิงก์หน้าเว็บ', 'showWebUrl')
     .addItem('วิธี Deploy', 'showDeployHelp')
@@ -82,7 +82,7 @@ function seedSample() {
   var withContent = store.all('Units').length === 0;
   if (!withContent) {
     var u = ui_();
-    if (u) withContent = u.alert('มีเนื้อหาอยู่แล้ว', 'ต้องการแทนที่เนื้อหาด้วยชุดตัวอย่าง 5 ภารกิจหรือไม่?\n(YES = แทนที่ / NO = ใส่เฉพาะนักศึกษาตัวอย่าง)', u.ButtonSet.YES_NO) === u.Button.YES;
+    if (u) withContent = u.alert('มีเนื้อหาอยู่แล้ว', 'ต้องการแทนที่เนื้อหาด้วยชุดตัวอย่าง 10 ภารกิจ + ภารกิจฐานข้อมูลหรือไม่?\n(YES = แทนที่ / NO = ใส่เฉพาะนักศึกษาตัวอย่าง)', u.ButtonSet.YES_NO) === u.Button.YES;
   }
   var r = seedSampleData_(store, withContent);
   say_('✅ เพิ่มนักศึกษาตัวอย่าง ' + r.students + ' คน (รหัส 692010001–692010010, PIN 1234)' + (withContent ? '\nใส่เนื้อหา ' + r.units + ' ภารกิจแล้ว' : ''));
@@ -90,10 +90,10 @@ function seedSample() {
 
 function reseedContent() {
   var u = ui_();
-  if (u && u.alert('ยืนยัน', 'แทนที่เนื้อหาทั้งหมดด้วยชุดตัวอย่าง 5 ภารกิจ? (คะแนนเดิมของกิจกรรมที่ id ตรงกันยังอยู่)', u.ButtonSet.YES_NO) !== u.Button.YES) return;
+  if (u && u.alert('ยืนยัน', 'แทนที่เนื้อหาทั้งหมดด้วยชุดตัวอย่าง 10 ภารกิจ + ภารกิจฐานข้อมูล? (คะแนนเดิมของกิจกรรมที่ id ตรงกันยังอยู่)', u.ButtonSet.YES_NO) !== u.Button.YES) return;
   var store = sheetStore_();
   store.lock(function () { importCourseData_(store, getSeedCourse_()); });
-  say_('✅ ใส่เนื้อหา 5 ภารกิจแล้ว');
+  say_('✅ ใส่เนื้อหาตัวอย่างแล้ว');
 }
 
 function clearSample() {
@@ -138,7 +138,7 @@ function writeReadme_(ss) {
     ['ระดับ: ดีเยี่ยม ≥ 90% / ดีมาก ≥ 75% / ผ่าน · ผ่านครบทุกภารกิจได้เกียรติบัตรสำเร็จหลักสูตร'],
     [''],
     ['แท็บข้อมูล (อย่าเปลี่ยนชื่อแท็บหรือหัวคอลัมน์)'],
-    ['Students นักศึกษา · Units ภารกิจ · Activities กิจกรรม · Attempts การส่งงาน · HintsUsed คำใบ้ · QuizSessions รอบสอบ · Overrides ครูปรับคะแนน · Certificates เกียรติบัตร · Log ประวัติการแก้ไข'],
+    ['Students นักศึกษา · Units ภารกิจ · Activities กิจกรรม · Attempts การส่งงาน · HintsUsed คำใบ้ · QuizSessions รอบสอบ · Overrides ครูปรับคะแนน · Certificates เกียรติบัตร · Integrity แจ้งเตือนทุจริต · Log ประวัติการแก้ไข'],
     [''],
     ['ข้อจำกัดที่ควรรู้'],
     ['• โค้ด HTML/CSS/JavaScript/Vue รันในเบราว์เซอร์ของนักศึกษา (iframe แยกส่วน) แสดงผลบนหน้าจอมือถือจำลอง ต้องต่ออินเทอร์เน็ตเพื่อโหลด Vue และ Bootstrap จาก CDN'],

@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 20
       - name: ทดสอบตรรกะหลักก่อนส่ง
-        run: node tools/test-core.js
+        run: node tools/test-core.js && node tools/test-gas.js
       - name: ติดตั้ง clasp
         run: npm install -g @google/clasp@2.4.2
       - name: เตรียมสิทธิ์และโปรเจกต์

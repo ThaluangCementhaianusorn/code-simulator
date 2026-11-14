@@ -1,6 +1,155 @@
 <!-- WebRunner.html — ตัวจำลองเว็บแอป: รัน HTML/CSS/JavaScript/Vue ใน iframe (sandbox) แสดงผลบนหน้าจอมือถือ
      + ฐานข้อมูลจำลอง fetch('/api/...') + localStorage จำลอง + ตัวช่วยตรวจงานอัตโนมัติ -->
 <script>
+/* ===== GAS-MOCK-START ===== Google Apps Script จำลอง: Google Sheet หลายแท็บเป็นฐานข้อมูล
+   (ไม่ใช้ DOM จึงทดสอบด้วย Node ได้ ดู tools/test-gas.js) */
+function __gasMock(init, opt) {
+  opt = opt || {};
+  var TZ = 'Asia/Bangkok';
+  var state = { sheets: [], mails: [], lock: { used: false, released: false }, props: {} };
+  function blank(v) { return v === '' || v === null || v === undefined; }
+  function copyVal(v) { return v instanceof Date ? new Date(v.getTime()) : (v === undefined || v === null ? '' : v); }
+  function mk(name, rows) { var s = { name: String(name), data: (rows || []).map(function (r) { return (r || []).map(copyVal); }) }; state.sheets.push(s); return s; }
+  Object.keys(init || {}).forEach(function (n) { mk(n, init[n]); });
+  function lastRow(s) { for (var i = s.data.length - 1; i >= 0; i--) if (s.data[i].some(function (v) { return !blank(v); })) return i + 1; return 0; }
+  function lastCol(s) { var m = 0; s.data.forEach(function (r) { for (var j = r.length - 1; j >= 0; j--) if (!blank(r[j])) { m = Math.max(m, j + 1); break; } }); return m; }
+  function getV(s, r, c) { var row = s.data[r - 1]; return row ? copyVal(row[c - 1]) : ''; }
+  function setV(s, r, c, v) {
+    while (s.data.length < r) s.data.push([]);
+    var row = s.data[r - 1]; while (row.length < c) row.push('');
+    row[c - 1] = v instanceof Date ? new Date(v.getTime()) : (v === undefined || v === null ? '' : v);
+  }
+  function colNum(L) { var n = 0; L = L.toUpperCase(); for (var i = 0; i < L.length; i++) n = n * 26 + (L.charCodeAt(i) - 64); return n; }
+  function colName(n) { var s = ''; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function pad(n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }
+  function formatDate(d, tz, f) {
+    if (!(d instanceof Date) || isNaN(d)) throw new Error('Utilities.formatDate: ค่าแรกต้องเป็น Date');
+    var p = {};
+    try { new Intl.DateTimeFormat('en-GB', { timeZone: tz || TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(d).forEach(function (x) { p[x.type] = x.value; }); }
+    catch (e) { p = { year: String(d.getFullYear()), month: pad(d.getMonth() + 1, 2), day: pad(d.getDate(), 2), hour: pad(d.getHours(), 2), minute: pad(d.getMinutes(), 2), second: pad(d.getSeconds(), 2) }; }
+    if (p.hour === '24') p.hour = '00';
+    return String(f || 'dd/MM/yyyy').replace(/yyyy|yy|MM|M|dd|d|HH|H|mm|ss/g, function (t) {
+      return { yyyy: p.year, yy: p.year.slice(2), MM: p.month, M: String(Number(p.month)), dd: p.day, d: String(Number(p.day)), HH: p.hour, H: String(Number(p.hour)), mm: p.minute, ss: p.second }[t];
+    });
+  }
+  function display(v) { return v instanceof Date ? formatDate(v, TZ, 'dd/MM/yyyy HH:mm:ss') : blank(v) ? '' : String(v); }
+  function parseA1(a1) {
+    var m = String(a1).trim().match(/^([A-Za-z]+)?(\d+)?(?::([A-Za-z]+)?(\d+)?)?$/);
+    if (!m || (!m[1] && !m[2])) throw new Error('รูปแบบช่วงเซลล์ไม่ถูกต้อง: ' + a1);
+    return { c1: m[1] ? colNum(m[1]) : 1, r1: m[2] ? Number(m[2]) : 1, c2: m[3] ? colNum(m[3]) : (m[1] && !m[2] ? colNum(m[1]) : null), r2: m[4] ? Number(m[4]) : null, colOnly: !!m[1] && !m[2], rowOnly: !m[1] && !!m[2], hasEnd: m[3] !== undefined || m[4] !== undefined };
+  }
+  function alive(s) { if (state.sheets.indexOf(s) < 0) throw new Error('แท็บ ' + s.name + ' ถูกลบไปแล้ว'); }
+  function Range(s, r, c, nr, nc) {
+    if (r < 1 || c < 1 || nr < 1 || nc < 1) throw new Error('ช่วงเซลล์ไม่ถูกต้อง (แถว/คอลัมน์เริ่มที่ 1 และต้องมีอย่างน้อย 1)');
+    var R = {
+      getRow: function () { return r; }, getColumn: function () { return c; }, getNumRows: function () { return nr; }, getNumColumns: function () { return nc; },
+      getLastRow: function () { return r + nr - 1; }, getLastColumn: function () { return c + nc - 1; },
+      getA1Notation: function () { return colName(c) + r + (nr > 1 || nc > 1 ? ':' + colName(c + nc - 1) + (r + nr - 1) : ''); },
+      getSheet: function () { return Sheet(s); },
+      getValues: function () { alive(s); var out = []; for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) row.push(getV(s, r + i, c + j)); out.push(row); } return out; },
+      getDisplayValues: function () { return R.getValues().map(function (row) { return row.map(display); }); },
+      getValue: function () { alive(s); return getV(s, r, c); },
+      getDisplayValue: function () { return display(R.getValue()); },
+      setValue: function (v) { alive(s); for (var i = 0; i < nr; i++) for (var j = 0; j < nc; j++) setV(s, r + i, c + j, v); return R; },
+      setValues: function (arr) {
+        alive(s);
+        if (!Array.isArray(arr) || !arr.every(Array.isArray)) throw new Error('setValues ต้องรับ Array 2 มิติ เช่น [["a", "b"]]');
+        if (arr.length !== nr) throw new Error('The number of rows in the data does not match the number of rows in the range. The data has ' + arr.length + ' but the range has ' + nr + '.');
+        arr.forEach(function (row) { if (row.length !== nc) throw new Error('The number of columns in the data does not match the number of columns in the range. The data has ' + row.length + ' but the range has ' + nc + '.'); });
+        arr.forEach(function (row, i) { row.forEach(function (v, j) { setV(s, r + i, c + j, v); }); });
+        return R;
+      },
+      clearContent: function () { alive(s); for (var i = 0; i < nr; i++) for (var j = 0; j < nc; j++) if (s.data[r + i - 1] && s.data[r + i - 1].length >= c + j) s.data[r + i - 1][c + j - 1] = ''; return R; },
+      offset: function (dr, dc, a, b) { return Range(s, r + dr, c + dc, a || nr, b || nc); }
+    };
+    R.clear = R.clearContent;
+    ['setNumberFormat', 'setNumberFormats', 'setFontWeight', 'setFontColor', 'setBackground', 'setBackgrounds', 'setHorizontalAlignment', 'setWrap', 'setBorder', 'setNote', 'merge', 'activate', 'setFontSize']
+      .forEach(function (k) { R[k] = function () { return R; }; });
+    return R;
+  }
+  function Sheet(s) {
+    var S = {
+      getName: function () { return s.name; }, setName: function (n) { s.name = String(n); return S; },
+      getLastRow: function () { return lastRow(s); }, getLastColumn: function () { return lastCol(s); },
+      getMaxRows: function () { return Math.max(1000, s.data.length); }, getMaxColumns: function () { return Math.max(26, lastCol(s)); },
+      getDataRange: function () { return Range(s, 1, 1, Math.max(1, lastRow(s)), Math.max(1, lastCol(s))); },
+      getRange: function (a, b, x, y) {
+        if (typeof a === 'string') {
+          var p = parseA1(a), lr = Math.max(1, lastRow(s)), lc = Math.max(1, lastCol(s));
+          if (p.colOnly) return Range(s, 1, p.c1, lr, (p.c2 || p.c1) - p.c1 + 1);
+          if (p.rowOnly) return Range(s, p.r1, 1, (p.r2 || p.r1) - p.r1 + 1, lc);
+          return Range(s, p.r1, p.c1, p.hasEnd ? (p.r2 || lr) - p.r1 + 1 : 1, p.hasEnd ? (p.c2 || p.c1) - p.c1 + 1 : 1);
+        }
+        if (typeof a !== 'number' || typeof b !== 'number') throw new Error('getRange ต้องรับ (แถว, คอลัมน์) เป็นตัวเลข หรือข้อความแบบ "A1:C3"');
+        return Range(s, a, b, x === undefined ? 1 : x, y === undefined ? 1 : y);
+      },
+      getSheetValues: function (r, c, nr, nc) { return Range(s, r, c, nr === -1 ? lastRow(s) - r + 1 : nr, nc === -1 ? lastCol(s) - c + 1 : nc).getValues(); },
+      appendRow: function (row) { alive(s); if (!Array.isArray(row)) throw new Error('appendRow ต้องรับ Array เช่น ["L0001", "6701001"]'); var r = lastRow(s) + 1; row.forEach(function (v, j) { setV(s, r, j + 1, v); }); return S; },
+      deleteRow: function (r) { alive(s); if (r < 1 || r > lastRow(s)) throw new Error('ไม่มีแถวที่ ' + r); s.data.splice(r - 1, 1); return S; },
+      deleteRows: function (r, n) { alive(s); s.data.splice(r - 1, n); return S; },
+      insertRowAfter: function (r) { s.data.splice(r, 0, []); return S; }, insertRowBefore: function (r) { s.data.splice(r - 1, 0, []); return S; },
+      clear: function () { s.data = []; return S; }, clearContents: function () { s.data = []; return S; },
+      getParent: function () { return SS; }, getSheetId: function () { return state.sheets.indexOf(s); }
+    };
+    ['setFrozenRows', 'setFrozenColumns', 'autoResizeColumns', 'autoResizeColumn', 'setColumnWidth', 'activate', 'hideSheet', 'showSheet', 'setTabColor', 'sort']
+      .forEach(function (k) { S[k] = function () { return S; }; });
+    return S;
+  }
+  function find(n) { return state.sheets.filter(function (s) { return s.name === String(n); })[0] || null; }
+  var SS = {
+    getId: function () { return 'sim-spreadsheet'; }, getName: function () { return 'ฐานข้อมูลจำลอง'; }, getUrl: function () { return 'https://docs.google.com/spreadsheets/d/sim-spreadsheet/edit'; },
+    getSheetByName: function (n) { var s = find(n); return s ? Sheet(s) : null; },
+    getSheets: function () { return state.sheets.map(Sheet); },
+    getActiveSheet: function () { if (!state.sheets.length) mk('Sheet1', []); return Sheet(state.sheets[0]); },
+    insertSheet: function (n) {
+      n = n === undefined ? 'Sheet' + (state.sheets.length + 1) : String(n);
+      if (find(n)) throw new Error('A sheet with the name "' + n + '" already exists. Please enter another name.');
+      return Sheet(mk(n, []));
+    },
+    deleteSheet: function (sh) { var s = find(sh.getName()); if (s) state.sheets.splice(state.sheets.indexOf(s), 1); },
+    getSpreadsheetTimeZone: function () { return TZ; }, toast: function () {}
+  };
+  SS.getRange = function (a1) { var m = String(a1).match(/^'?([^'!]+)'?!(.+)$/); var s = m ? find(m[1]) : state.sheets[0]; if (!s) throw new Error('ไม่พบแท็บ ' + (m ? m[1] : '')); return Sheet(s).getRange(m ? m[2] : a1); };
+  function mail(a, subject, body, o) {
+    var m = typeof a === 'object' && a !== null ? { to: a.to, subject: a.subject, body: a.body || a.htmlBody || '' } : { to: a, subject: subject, body: body };
+    if (!m.to || !/@/.test(String(m.to))) throw new Error('Invalid email: ' + m.to);
+    m.to = String(m.to); m.subject = String(m.subject === undefined ? '' : m.subject); m.body = String(m.body === undefined ? '' : m.body);
+    state.mails.push(m);
+    if (opt.onMail) opt.onMail(m);
+  }
+  function lockObj() {
+    var held = false;
+    return { waitLock: function () { state.lock.used = true; held = true; }, tryLock: function () { state.lock.used = true; held = true; return true; },
+      releaseLock: function () { if (held) state.lock.released = true; held = false; }, hasLock: function () { return held; } };
+  }
+  function props() { return { getProperty: function (k) { return state.props[k] === undefined ? null : state.props[k]; }, setProperty: function (k, v) { state.props[k] = String(v); return this; }, deleteProperty: function (k) { delete state.props[k]; return this; }, getProperties: function () { return JSON.parse(JSON.stringify(state.props)); } }; }
+  var globals = {
+    SpreadsheetApp: { getActive: function () { return SS; }, getActiveSpreadsheet: function () { return SS; }, openById: function () { return SS; }, openByUrl: function () { return SS; }, flush: function () {}, getUi: function () { return { alert: function (m) { if (opt.log) opt.log(String(m)); } }; } },
+    LockService: { getScriptLock: lockObj, getDocumentLock: lockObj, getUserLock: lockObj },
+    MailApp: { sendEmail: mail, getRemainingDailyQuota: function () { return 100 - state.mails.length; } },
+    GmailApp: { sendEmail: mail },
+    Utilities: { formatDate: formatDate, getUuid: function () { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (ch) { var r = Math.random() * 16 | 0; return (ch === 'x' ? r : (r & 3 | 8)).toString(16); }); }, sleep: function () {} },
+    Session: { getScriptTimeZone: function () { return TZ; }, getActiveUser: function () { return { getEmail: function () { return 'teacher@college.ac.th'; } }; }, getEffectiveUser: function () { return { getEmail: function () { return 'teacher@college.ac.th'; } }; } },
+    PropertiesService: { getScriptProperties: props, getUserProperties: props, getDocumentProperties: props },
+    Logger: { log: function () { var a = Array.prototype.slice.call(arguments), f = a[0]; if (typeof f === 'string' && /%s/.test(f) && a.length > 1) { var k = 1; f = f.replace(/%s/g, function () { return display(a[k++]); }); a = [f]; } if (opt.log) opt.log(a.map(function (x) { return typeof x === 'string' ? x : JSON.stringify(x); }).join(' ')); } }
+  };
+  /* ตัวช่วยสำหรับชุดตรวจ: cell("Loans!A3") cells("Report!A2:F4") values("Students") lastRow("Loans") sheetNames() mails() lockUsed() */
+  function ref(a1) { var m = String(a1).match(/^'?([^'!]+)'?!(.+)$/); if (!m) throw new Error('ต้องระบุแท็บ เช่น "Loans!A3"'); var s = find(m[1]); return s ? Sheet(s).getRange(m[2]) : null; }
+  var helpers = {
+    cell: function (a1) { var r = ref(a1); return r ? display(r.getValue()) : null; },
+    cells: function (a1) { var r = ref(a1); return r ? r.getValues().map(function (row) { return row.map(display).join('|'); }).join('\n') : null; },
+    values: function (n) { var s = find(n); return s ? Sheet(s).getDataRange().getValues() : null; },
+    lastRow: function (n) { var s = find(n); return s ? lastRow(s) : -1; },
+    sheetNames: function () { return state.sheets.map(function (s) { return s.name; }); },
+    mails: function () { return state.mails.map(function (m) { return { to: m.to, subject: m.subject, body: m.body }; }); },
+    lockUsed: function () { return state.lock.used; }
+  };
+  function snapshot() { return state.sheets.map(function (s) { var lr = lastRow(s), lc = lastCol(s); return { name: s.name, rows: s.data.slice(0, lr).map(function (r) { var o = []; for (var j = 0; j < lc; j++) o.push(display(r[j])); return o; }) }; }); }
+  function raw() { var o = {}; state.sheets.forEach(function (s) { o[s.name] = s.data.slice(0, lastRow(s)).map(function (r) { return r.map(function (v) { return v instanceof Date ? display(v) : v; }); }); }); return o; }
+  return { globals: globals, helpers: helpers, snapshot: snapshot, raw: raw, state: state, formatDate: formatDate };
+}
+/* ===== GAS-MOCK-END ===== */
+
 /* ===== WEB-PRELUDE-START ===== (โค้ดส่วนนี้ถูกฉีดเข้าไปทำงานในหน้าเว็บของผู้เรียน) */
 function __simPrelude(cfg) {
   var RID = cfg.rid, P = window.parent;
@@ -160,6 +309,26 @@ function __simPrelude(cfg) {
       }, cfg.apiDelay);
     });
   };
+  /* ---------- Google Apps Script จำลอง (lang: gas) ---------- */
+  var G = null;
+  if (cfg.gas && typeof __gasMock === 'function') {
+    G = __gasMock(cfg.gas.sheets || {}, {
+      log: function (s) { console.log(s); },
+      onMail: function (m) { send({ t: 'log', level: 'log', text: '✉️ ส่งอีเมลถึง ' + m.to + ' · ' + m.subject }); }
+    });
+    Object.keys(G.globals).forEach(function (k) { window[k] = G.globals[k]; });
+    window.__gasAfter = function () {
+      if (!cfg.test && cfg.gas.call) {
+        send({ t: 'log', level: 'log', text: '▶ ' + cfg.gas.call });
+        try { var v = (0, eval)(cfg.gas.call); send({ t: 'ret', text: show(v, 1) }); }
+        catch (e) {
+          var ln = String((e && e.stack) || '').match(/srcdoc:(\d+):/);
+          send({ t: 'error', name: (e && e.name) || 'Error', message: (e && e.name ? e.name + ': ' : '') + ((e && e.message) || String(e)), line: ln ? Math.max(1, Number(ln[1]) - cfg.lineOffset) : null });
+        }
+      }
+      if (!cfg.test) send({ t: 'sheets', data: G.snapshot(), raw: G.raw(), mails: G.helpers.mails() });
+    };
+  }
   /* ---------- ตัวช่วยสำหรับชุดตรวจ (tests[].check) ---------- */
   function norm(s) { return String(s).replace(/\s+/g, ' ').trim(); }
   function q1(s) { return typeof s === 'string' ? document.querySelector(s) : s; }
@@ -199,6 +368,7 @@ function __simPrelude(cfg) {
     logs: logs, db: db,
     store: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   };
+  if (G) Object.keys(G.helpers).forEach(function (k) { H[k] = G.helpers[k]; });
   window.addEventListener('message', function (ev) {
     var m = ev.data; if (!m || m.__simCheck !== RID) return;
     var names = Object.keys(H), fn;
@@ -267,9 +437,13 @@ var WebRunner = (function () {
       return /type\s*=\s*["']?(text\/(x-)?template|importmap|application\/(ld\+)?json)/i.test(a) ? m : a + guardJs(js) + c;
     });
   }
+  var GAS = __gasMock.toString(), GAS_LINES = GAS.split('\n').length;
   function build(code, cfg, lang) {
-    var pre = '<script>' + PRE + '(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ')<\/script>';
-    var body = lang === 'js' ? '<script>' + code + '\n<\/script>' : String(code || '');
+    var gas = lang === 'gas';
+    cfg.lineOffset = PRE_LINES + (gas ? GAS_LINES : 0);
+    var pre = '<script>' + (gas ? GAS + '\n' : '') + PRE + '(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ')<\/script>';
+    var body = lang === 'js' ? '<script>' + code + '\n<\/script>'
+      : gas ? '<script>' + code + '\n<\/script><script>window.__gasAfter && __gasAfter()<\/script>' : String(code || '');
     body = guard(body);
     var m = body.match(/^\s*<!doctype[^>]*>/i);
     return m ? m[0] + pre + body.slice(m[0].length) : '<!DOCTYPE html>' + pre + body;
@@ -281,7 +455,9 @@ var WebRunner = (function () {
     frame.__rid = rid;
     handlers[rid] = { frame: frame, fn: o.onMsg || function () {} };
     frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
-    frame.srcdoc = build(code, { rid: rid, test: !!o.test, loopMs: o.test ? 1500 : 2500, apiDelay: o.test ? 20 : 220, storage: o.storage || {}, db: o.db || freshDb(), lineOffset: PRE_LINES }, o.lang);
+    var cfg = { rid: rid, test: !!o.test, loopMs: o.test ? 1500 : 2500, apiDelay: o.test ? 20 : 220, storage: o.storage || {}, db: o.db || freshDb(), lineOffset: PRE_LINES };
+    if (o.lang === 'gas') cfg.gas = { sheets: o.sheets || freshSheets(), call: o.call || '' };
+    frame.srcdoc = build(code, cfg, o.lang);
     return rid;
   }
   function unmount(frame) { if (frame.__rid) delete handlers[frame.__rid]; frame.__rid = null; }
@@ -312,7 +488,7 @@ var WebRunner = (function () {
         // หน้าเว็บโหลดซ้ำ = ฟอร์มถูกส่งจริงหรือเปลี่ยนหน้า (โค้ดตรวจจะหายไปด้วย)
         if (++loads > 1) finish({ output: '', error: { name: 'Reloaded', message: 'หน้าเว็บถูกโหลดใหม่ระหว่างตรวจ อาจเพราะส่งฟอร์มโดยไม่ได้ใช้ e.preventDefault() หรือ @submit.prevent' } });
       });
-      mount(f, code, { lang: o.lang, test: true, db: o.db, onMsg: function (m) {
+      mount(f, code, { lang: o.lang, test: true, db: o.db, sheets: o.sheets, onMsg: function (m) {
         if (m.t === 'error') errs.push(m);
         else if (m.t === 'log') logs.push(m.text);
         else if (m.t === 'ready') setTimeout(function () {
@@ -327,11 +503,22 @@ var WebRunner = (function () {
   function tests(code, list, o) {
     var out = [];
     return list.reduce(function (p, t) {
-      return p.then(function () { return runOne(code, t.check || t.input || '', o).then(function (r) { out.push(r); }); });
+      // โจทย์ฐานข้อมูล: ชุดตรวจแต่ละชุดใช้ข้อมูลของตัวเองได้ (ชุดซ่อน) ไม่เช่นนั้นใช้ข้อมูลของโจทย์
+      var oo = o; if (o && o.lang === 'gas') { oo = {}; for (var k in o) oo[k] = o[k]; oo.sheets = JSON.parse(JSON.stringify(t.sheets || o.sheets || freshSheets())); }
+      return p.then(function () { return runOne(code, t.check || t.input || '', oo).then(function (r) { out.push(r); }); });
     }, Promise.resolve()).then(function () { return out; });
   }
+  /** ฐานข้อมูล Google Sheet ตัวอย่าง (ใช้กับบล็อก ```gas ในใบความรู้) */
+  var SAMPLE_SHEETS = {
+    Students: [['รหัส', 'ชื่อ-สกุล', 'ห้อง'], ['6701001', 'ธนพล ใจดี', 'ปวส.1/1'], ['6701002', 'กมลวรรณ แสงทอง', 'ปวส.1/1'], ['6701003', 'ปิยะพงษ์ ศรีสุข', 'ปวส.1/2']],
+    Items: [['รหัสครุภัณฑ์', 'ชื่อ', 'สถานะ'], ['T01', 'มัลติมิเตอร์ดิจิทัล', 'ว่าง'], ['T02', 'หัวแร้งบัดกรี', 'ถูกยืม'], ['T03', 'ออสซิลโลสโคป', 'ว่าง']],
+    Loans: [['เลขที่', 'รหัสนักเรียน', 'รหัสครุภัณฑ์', 'วันที่ยืม', 'สถานะ'], ['L0001', '6701002', 'T02', '10/11/2026', 'ยืมอยู่']],
+    Products: [['รหัส', 'ชื่อสินค้า', 'ราคา', 'คงเหลือ'], ['P01', 'ปากกาลูกลื่น', 10, 50], ['P02', 'สมุดปกอ่อน', 25, 3], ['P03', 'ยางลบ', 5, 20]],
+    Orders: [['เลขที่', 'รหัสนักเรียน', 'รายการ', 'ยอดรวม', 'เวลา']]
+  };
+  function freshSheets() { return JSON.parse(JSON.stringify(SAMPLE_SHEETS)); }
   return {
-    mount: mount, unmount: unmount, tests: tests, freshDb: freshDb, build: build, guardJs: guardJs,
+    mount: mount, unmount: unmount, tests: tests, freshDb: freshDb, freshSheets: freshSheets, build: build, guardJs: guardJs,
     /** รันแล้วเก็บ console.log (ใช้กับข้อ "ทายผลลัพธ์" ของ JavaScript) */
     logs: function (code, lang) { return runOne(code, null, { lang: lang || 'js', settleMs: 300 }); }
   };
@@ -373,28 +560,29 @@ function thaiJsError(m) {
  */
 function WebSim(host, o) {
   o = o || {};
-  var lang = o.lang === 'js' ? 'js' : 'html';
-  var state = { storage: {}, db: null, device: o.device || 'phone', live: o.live !== false && lang === 'html', ran: false };
-  var root = el('div', { class: 'wsim', 'data-view': 'code' });
+  var lang = o.lang === 'js' ? 'js' : o.lang === 'gas' ? 'gas' : 'html', gas = lang === 'gas';
+  var initSheets = gas ? JSON.parse(JSON.stringify(o.sheets || WebRunner.freshSheets())) : null;
+  var state = { storage: {}, db: null, device: o.device || 'phone', live: o.live !== false && lang === 'html', ran: false, sheets: initSheets && JSON.parse(JSON.stringify(initSheets)), tab: 0, prev: null };
+  var root = el('div', { class: 'wsim' + (gas ? ' gas' : ''), 'data-view': 'code' });
   var seg = el('div', { class: 'wsim-seg', role: 'tablist' });
-  var sCode = el('button', { type: 'button', class: 'on' }, '✏️ โค้ด'), sView = el('button', { type: 'button' }, lang === 'js' ? '🧾 ผลลัพธ์' : '📱 หน้าจอ');
+  var sCode = el('button', { type: 'button', class: 'on' }, '✏️ โค้ด'), sView = el('button', { type: 'button' }, lang === 'js' ? '🧾 ผลลัพธ์' : gas ? '📊 ชีต' : '📱 หน้าจอ');
   seg.appendChild(sCode); seg.appendChild(sView);
   var grid = el('div', { class: 'wsim-grid' });
   var left = el('div', { class: 'wsim-code' });
   var head = el('div', { class: 'wsim-head' });
-  head.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="fname">' + (lang === 'js' ? 'script.js' : 'index.html') + '</span>';
+  head.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span class="fname">' + (lang === 'js' ? 'script.js' : gas ? 'Code.gs' : 'index.html') + '</span>';
   var keys = el('div', { class: 'keys', 'aria-label': 'แป้นสัญลักษณ์' });
-  var KEYS = lang === 'js' ? ['⇥', '(', ')', '{', '}', '[', ']', ';', '.', '=', '"', "'", '`', '$', '+', '<', '>', '!', '&', '|', ':', ','] : ['⇥', '<', '>', '/', '=', '"', "'", '{', '}', '(', ')', ';', ':', '.', '#', '-', '@', '`', '$', '!', '&', '[', ']'];
+  var KEYS = lang !== 'html' ? ['⇥', '(', ')', '{', '}', '[', ']', ';', '.', '=', '"', "'", '`', '$', '+', '<', '>', '!', '&', '|', ':', ','] : ['⇥', '<', '>', '/', '=', '"', "'", '{', '}', '(', ')', ';', ':', '.', '#', '-', '@', '`', '$', '!', '&', '[', ']'];
   KEYS.forEach(function (k) { var b = el('button', { type: 'button', title: k === '⇥' ? 'ย่อหน้า' : k }, k); b.onclick = function () { editor.insert(k === '⇥' ? '  ' : k); }; keys.appendChild(b); });
   var edHost = el('div', { class: 'ed' });
   left.appendChild(head); left.appendChild(keys); left.appendChild(edHost);
   var right = el('div', { class: 'wsim-view' });
   var dev = el('div', { class: 'wsim-dev' });
   var bPhone = el('button', { type: 'button', title: 'จอมือถือ 360px' }, '📱'), bDesk = el('button', { type: 'button', title: 'จอคอม 1024px' }, '💻');
-  var urlBar = el('span', { class: 'url' }, lang === 'js' ? 'Console' : 'sim.local');
+  var urlBar = el('span', { class: 'url' }, lang === 'js' ? 'Console' : gas ? '📗 Google Sheet จำลอง' : 'sim.local');
   if (lang === 'html') { dev.appendChild(bPhone); dev.appendChild(bDesk); }
   dev.appendChild(urlBar);
-  var phone = el('div', { class: 'phone' + (lang === 'js' ? ' hidden' : '') });
+  var phone = el('div', { class: 'phone' + (lang !== 'html' ? ' hidden' : '') });
   var screen = el('div', { class: 'screen' });
   var sbar = el('div', { class: 'sbar' }); sbar.innerHTML = '<b>9:41</b><span class="notch"></span><span>📶 🔋</span>';
   var frame = el('iframe', { title: 'ผลลัพธ์ของโค้ด' });
@@ -403,7 +591,13 @@ function WebSim(host, o) {
     if (++state.loads > 1) line('warn', '<span class="pf">⚠</span>หน้าเว็บถูกโหลดใหม่ (หน้าจอว่าง) <span class="th">💬 มักเกิดจากส่งฟอร์มโดยไม่ได้ใช้ e.preventDefault() หรือ @submit.prevent หรือกดลิงก์ที่ไม่ได้ขึ้นต้นด้วย # กด ▶ รัน เพื่อเริ่มใหม่</span>');
   });
   var con = el('div', { class: 'wcon', 'aria-live': 'polite' });
-  right.appendChild(dev); right.appendChild(phone); right.appendChild(con);
+  var callBar = el('div', { class: 'gas-call' + (gas ? '' : ' hidden') });
+  var callIn = el('input', { class: 'in mono', spellcheck: 'false', placeholder: 'เช่น borrowItem("6701001", "T01")', 'aria-label': 'คำสั่งที่จะเรียกเมื่อกดรัน' });
+  callIn.value = o.call || '';
+  callBar.appendChild(el('span', { class: 'small' }, 'เรียกใช้')); callBar.appendChild(callIn);
+  var sheetBox = el('div', { class: 'gsheet' + (gas ? '' : ' hidden') });
+  var mailBox = el('div', { class: 'gmail hidden' });
+  right.appendChild(dev); right.appendChild(callBar); right.appendChild(phone); right.appendChild(sheetBox); right.appendChild(mailBox); right.appendChild(con);
   grid.appendChild(left); grid.appendChild(right);
   var tools = el('div', { class: 'tools' });
   var runBtn = el('button', { class: 'btn primary', type: 'button' }, '▶ รัน');
@@ -419,7 +613,7 @@ function WebSim(host, o) {
   root.appendChild(seg); root.appendChild(grid); root.appendChild(tools);
   host.appendChild(root);
 
-  var editor = makeEditor(edHost, o.code || '', { mode: lang === 'js' ? 'javascript' : 'htmlmixed', onChange: function (v) { if (o.onChange) o.onChange(v); if (liveCb.checked && lang === 'html') liveRun(); } });
+  var editor = makeEditor(edHost, o.code || '', { mode: lang !== 'html' ? 'javascript' : 'htmlmixed', guard: o.guard, onChange: function (v) { if (o.onChange) o.onChange(v); if (liveCb.checked && lang === 'html') liveRun(); } });
   editor.refresh();
   var starter = o.starter !== undefined ? o.starter : (o.code || '');
   var liveTimer = null;
@@ -441,27 +635,35 @@ function WebSim(host, o) {
     else if (m.t === 'net') line('net', '<span class="pf">⇄</span>' + esc(m.method + ' ' + m.url) + ' <span class="st s' + String(m.status).charAt(0) + '">' + m.status + '</span>');
     else if (m.t === 'storage') state.storage = m.data;
     else if (m.t === 'db') state.db = m.data;
-    else if (m.t === 'ready') { if (m.title) urlBar.textContent = m.title; if (lang === 'js' && !con.querySelector('.ln')) con.innerHTML = '<div class="ph">(โปรแกรมทำงานเสร็จ แต่ไม่มี console.log)</div>'; }
+    else if (m.t === 'ret') line('ret', '<span class="pf">↩</span>ค่าที่ return: ' + esc(m.text));
+    else if (m.t === 'sheets') { state.prev = state.sheets; state.sheets = m.raw; drawSheets(); drawMails(m.mails || []); }
+    else if (m.t === 'ready') { if (m.title) urlBar.textContent = m.title; if (lang !== 'html' && !con.querySelector('.ln')) con.innerHTML = '<div class="ph">(โปรแกรมทำงานเสร็จ แต่ไม่มี console.log)</div>'; }
   }
   function run(quiet) {
     editor.clearMarks(); state.ran = true;
-    con.innerHTML = '<div class="ph">' + (lang === 'js' ? 'กำลังรัน…' : 'Console: console.log และ error จะแสดงที่นี่') + '</div>';
-    urlBar.textContent = lang === 'js' ? 'Console' : 'sim.local';
+    con.innerHTML = '<div class="ph">' + (lang !== 'html' ? 'กำลังรัน…' : 'Console: console.log และ error จะแสดงที่นี่') + '</div>';
+    urlBar.textContent = lang === 'js' ? 'Console' : gas ? '📗 Google Sheet จำลอง' : 'sim.local';
     state.loads = 0;
-    WebRunner.mount(frame, editor.get(), { lang: lang, storage: state.storage, db: state.db || (state.db = WebRunner.freshDb()), onMsg: onMsg });
+    WebRunner.mount(frame, editor.get(), { lang: lang, storage: state.storage, db: state.db || (state.db = WebRunner.freshDb()), sheets: state.sheets, call: callIn.value.trim(), onMsg: onMsg });
     if (!quiet) setView('view');
   }
   function setView(v) { root.setAttribute('data-view', v); sCode.classList.toggle('on', v === 'code'); sView.classList.toggle('on', v === 'view'); if (v === 'code') editor.refresh(); fit(); }
   sCode.onclick = function () { setView('code'); }; sView.onclick = function () { if (!state.ran) run(true); setView('view'); };
   runBtn.onclick = function () { run(false); };
   liveCb.onchange = function () { if (liveCb.checked) run(true); };
-  dlBtn.onclick = function () { downloadText(lang === 'js' ? 'script.js' : 'index.html', editor.get(), lang === 'js' ? 'text/javascript' : 'text/html'); };
-  dbBtn.onclick = function () { state.storage = {}; state.db = WebRunner.freshDb(); toast('ล้าง localStorage และคืนฐานข้อมูลตัวอย่างแล้ว', 'ok'); run(true); };
+  dlBtn.onclick = function () { downloadText(lang === 'js' ? 'script.js' : gas ? 'Code.gs' : 'index.html', editor.get(), lang !== 'html' ? 'text/javascript' : 'text/html'); };
+  dbBtn.onclick = function () {
+    state.storage = {}; state.db = WebRunner.freshDb();
+    if (gas) { state.sheets = JSON.parse(JSON.stringify(initSheets)); state.prev = null; drawSheets(); drawMails([]); toast('คืนข้อมูลใน Google Sheet จำลองเป็นค่าเริ่มต้นแล้ว', 'ok'); return; }
+    toast('ล้าง localStorage และคืนฐานข้อมูลตัวอย่างแล้ว', 'ok'); run(true);
+  };
+  if (gas) dbBtn.title = 'คืนข้อมูลในชีตเป็นค่าเริ่มต้น';
+  callIn.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); run(false); } };
   resetBtn.onclick = function () { if (confirm('คืนค่าโค้ดตั้งต้น? โค้ดที่แก้ไว้จะหายไป')) { editor.set(starter); editor.clearMarks(); run(true); } };
   function setDevice(d) { state.device = d; bPhone.classList.toggle('on', d === 'phone'); bDesk.classList.toggle('on', d === 'desk'); phone.classList.toggle('desk', d === 'desk'); fit(); }
   bPhone.onclick = function () { setDevice('phone'); }; bDesk.onclick = function () { setDevice('desk'); };
   function fit() {
-    if (lang === 'js') return;
+    if (lang !== 'html') return;
     var avail = (right.clientWidth || 320) - 24 - (state.device === 'phone' ? 24 : 18);
     var W = state.device === 'phone' ? 360 : 1024, Hh = state.device === 'phone' ? 680 : 640;
     var s = Math.max(0.3, Math.min(1, avail / W));
@@ -476,10 +678,45 @@ function WebSim(host, o) {
       var io = new IntersectionObserver(function (es) { if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); if (!state.ran) run(true); } }, { rootMargin: '200px' });
       io.observe(root);
     } else run(true);
-  } else con.innerHTML = '<div class="ph">กด ▶ รัน เพื่อดูผลลัพธ์ใน Console</div>';
+  } else con.innerHTML = '<div class="ph">' + (gas ? 'กด ▶ รัน เพื่อเรียกคำสั่งในช่อง "เรียกใช้" แล้วดูข้อมูลในชีตที่เปลี่ยนไป (ช่องที่เปลี่ยนเป็นสีเหลือง แท็บที่เปลี่ยนมีจุด •)' : 'กด ▶ รัน เพื่อดูผลลัพธ์ใน Console') + '</div>';
+  /* ----- มุมมองชีต (Google Sheet จำลอง): 1 แท็บ = 1 ตาราง ----- */
+  function colName(n) { var s = ''; n++; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function drawSheets() {
+    if (!gas) return;
+    var names = Object.keys(state.sheets || {}); if (state.tab >= names.length) state.tab = 0;
+    sheetBox.innerHTML = '';
+    var wrap = el('div', { class: 'gs-wrap' }), tabs = el('div', { class: 'gs-tabs', role: 'tablist' });
+    var name = names[state.tab], rows = (state.sheets[name] || []), prev = state.prev && state.prev[name];
+    var w = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+    var h = '<table class="gs"><thead><tr><th></th>';
+    for (var j = 0; j < Math.max(w, 1); j++) h += '<th>' + colName(j) + '</th>';
+    h += '</tr></thead><tbody>';
+    rows.slice(0, 300).forEach(function (r, i) {
+      h += '<tr' + (i === 0 ? ' class="hd"' : '') + '><th>' + (i + 1) + '</th>';
+      for (var j = 0; j < w; j++) {
+        var v = r[j] === undefined || r[j] === null ? '' : String(r[j]);
+        var pv = prev ? (prev[i] && prev[i][j] !== undefined && prev[i][j] !== null ? String(prev[i][j]) : '') : v;
+        h += '<td class="' + (typeof r[j] === 'number' ? 'n' : '') + (pv !== v ? ' chg' : '') + '">' + esc(v) + '</td>';
+      }
+      h += '</tr>';
+    });
+    if (!rows.length) h += '<tr><th>1</th><td class="muted">(แท็บว่าง)</td></tr>';
+    wrap.innerHTML = h + '</tbody></table>';
+    names.forEach(function (n, k) {
+      var changed = state.prev && JSON.stringify(state.prev[n]) !== JSON.stringify(state.sheets[n]);
+      var b = el('button', { type: 'button', role: 'tab', class: k === state.tab ? 'on' : '' }, n + (changed ? ' •' : ''));
+      b.onclick = function () { state.tab = k; drawSheets(); }; tabs.appendChild(b);
+    });
+    sheetBox.appendChild(wrap); sheetBox.appendChild(tabs);
+  }
+  function drawMails(list) {
+    mailBox.classList.toggle('hidden', !list.length);
+    mailBox.innerHTML = list.length ? '<b>✉️ อีเมลที่ส่ง (' + list.length + ')</b>' + list.map(function (m) { return '<details><summary>' + esc(m.to) + ' · ' + esc(m.subject) + '</summary><pre>' + esc(m.body) + '</pre></details>'; }).join('') : '';
+  }
+  drawSheets();
   return {
     editor: editor, root: root, runBtn: runBtn,
-    getCode: function () { return editor.get(); },
+    getCode: function () { return editor.get(); }, getCall: function () { return callIn.value; },
     run: run, print: function (h) { con.innerHTML = h; }
   };
 }

@@ -185,6 +185,146 @@ function confetti() {
   }
 }
 
+/* ---------- กราฟแดชบอร์ด (SVG/HTML ล้วน ไม่ใช้ไลบรารีภายนอก) ----------
+   สีใช้ตัวแปร CSS จึงรองรับโหมดมืด · ทุกแท่ง/จุดมี tooltip เมื่อชี้หรือแตะ · มีปุ่มดูเป็นตาราง */
+var Charts = (function () {
+  var tip = null;
+  function tipShow(x, y, html) {
+    if (!tip) { tip = el('div', { class: 'ch-tip', role: 'tooltip' }); document.body.appendChild(tip); }
+    tip.innerHTML = html; tip.style.display = 'block';
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(window.innerWidth - w - 8, Math.max(8, x - w / 2)) + 'px';
+    tip.style.top = (y - h - 14 < 8 ? y + 18 : y - h - 14) + 'px';
+  }
+  function tipHide() { if (tip) tip.style.display = 'none'; }
+  window.addEventListener('scroll', tipHide, { passive: true });
+  function bindTip(node, html) {
+    node.addEventListener('mousemove', function (e) { tipShow(e.clientX, e.clientY, typeof html === 'function' ? html(e) : html); });
+    node.addEventListener('mouseleave', tipHide);
+    node.addEventListener('touchstart', function (e) { var t = e.touches[0]; tipShow(t.clientX, t.clientY, typeof html === 'function' ? html(t) : html); clearTimeout(node.__tt); node.__tt = setTimeout(tipHide, 2000); }, { passive: true });
+  }
+  function niceMax(v) { if (v <= 5) return 5; var p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+  function tableToggle(host, head, rows) {
+    var d = el('details', { class: 'ch-table' });
+    d.appendChild(el('summary', {}, 'ดูเป็นตาราง'));
+    var t = '<table class="tests"><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr>';
+    rows.forEach(function (r) { t += '<tr>' + r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>'; });
+    var w = el('div'); w.innerHTML = t + '</table>'; d.appendChild(w); host.appendChild(d);
+  }
+  /** แท่งแนวนอน (ร้อยละรายภารกิจ ฯลฯ) rows: [{ label, value, text, tip, muted, onClick }] */
+  function hbars(host, rows, o) {
+    o = o || {}; var max = o.max || 100;
+    var box = el('div', { class: 'ch-hbars' });
+    rows.forEach(function (r) {
+      var row = el('div', { class: 'ch-hrow' + (r.muted ? ' muted' : '') + (r.onClick ? ' click' : '') + (r.ok ? ' ok' : '') });
+      var w = Math.max(0, Math.min(100, (Number(r.value) || 0) / max * 100));
+      row.innerHTML = '<span class="ch-hl" title="' + esc(r.label) + '">' + esc(r.label) + '</span><span class="ch-ht"><i style="width:' + w + '%"></i>' +
+        (o.target ? '<b class="ch-tg" style="left:' + (o.target / max * 100) + '%" title="เกณฑ์ ' + o.target + (o.unit || '') + '"></b>' : '') + '</span><span class="ch-hv">' + esc(r.text !== undefined ? r.text : fmt(r.value) + (o.unit || '')) + '</span>';
+      bindTip(row, r.tip || ('<b>' + esc(r.label) + '</b><br>' + esc(fmt(r.value) + (o.unit || ''))));
+      if (r.onClick) { row.tabIndex = 0; row.onclick = r.onClick; row.onkeydown = function (e) { if (e.key === 'Enter') r.onClick(); }; }
+      box.appendChild(row);
+    });
+    host.appendChild(box);
+    return box;
+  }
+  /** แท่งแนวตั้ง data: [{ label, value, title }] */
+  function columns(host, data, o) {
+    o = o || {};
+    var max = o.max || niceMax(Math.max.apply(null, data.map(function (d) { return d.value; }).concat([1])));
+    var wrap = el('div', { class: 'ch-colwrap' });
+    var grid = el('div', { class: 'ch-cols', style: 'grid-template-columns:repeat(' + data.length + ',1fr);height:' + (o.height || 150) + 'px' });
+    var every = o.labelEvery || Math.max(1, Math.ceil(data.length / 7));
+    data.forEach(function (d, i) {
+      var c = el('div', { class: 'ch-col', tabindex: '0' });
+      var bar = el('i'); bar.style.height = (d.value / max * 100) + '%'; if (!d.value) bar.className = 'zero';
+      c.appendChild(bar);
+      bindTip(c, '<b>' + esc(d.title || d.label) + '</b><br>' + esc(fmt(d.value) + ' ' + (o.unit || '')));
+      grid.appendChild(c);
+    });
+    var axis = el('div', { class: 'ch-xs', style: 'grid-template-columns:repeat(' + data.length + ',1fr)' });
+    data.forEach(function (d, i) { axis.appendChild(el('span', {}, (i % every === 0 || i === data.length - 1) ? d.label : '')); });
+    wrap.appendChild(el('div', { class: 'ch-ymax' }, fmt(max) + (o.unit ? ' ' + o.unit : '')));
+    wrap.appendChild(grid); wrap.appendChild(axis);
+    host.appendChild(wrap);
+    if (o.table !== false) tableToggle(host, [o.xName || 'รายการ', o.yName || 'ค่า'], data.map(function (d) { return [d.title || d.label, fmt(d.value)]; }));
+    return wrap;
+  }
+  /** กราฟเส้น+พื้นที่ (แนวโน้มรายวัน) พร้อมเส้นชี้ตำแหน่ง */
+  function area(host, data, o) {
+    o = o || {};
+    var box = el('div', { class: 'ch-area' }); host.appendChild(box);
+    function draw() {
+      var W = Math.max(240, box.clientWidth || host.clientWidth || 600), H = o.height || 150, P = { l: 28, r: 10, t: 12, b: 22 };
+      var max = niceMax(Math.max.apply(null, data.map(function (d) { return d.value; }).concat([1])));
+      var X = function (i) { return P.l + (data.length < 2 ? 0 : i * (W - P.l - P.r) / (data.length - 1)); };
+      var Y = function (v) { return P.t + (H - P.t - P.b) * (1 - v / max); };
+      var line = data.map(function (d, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(d.value).toFixed(1); }).join(' ');
+      var fill = line + ' L' + X(data.length - 1).toFixed(1) + ' ' + Y(0) + ' L' + X(0) + ' ' + Y(0) + ' Z';
+      var g = '';
+      [0, .5, 1].forEach(function (f) { var y = Y(max * f); g += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" class="gl"/><text x="' + (P.l - 6) + '" y="' + (y + 4) + '" class="yl" text-anchor="end">' + fmt(max * f) + '</text>'; });
+      var every = Math.max(1, Math.ceil(data.length / 6));
+      data.forEach(function (d, i) { if (i % every === 0 || i === data.length - 1) g += '<text x="' + X(i) + '" y="' + (H - 6) + '" class="xl" text-anchor="' + (i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle') + '">' + esc(d.label) + '</text>'; });
+      box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(o.aria || 'กราฟแนวโน้ม') + '">' + g +
+        '<path d="' + fill + '" class="af"/><path d="' + line + '" class="al"/><line class="cx" y1="' + P.t + '" y2="' + Y(0) + '" x1="-9" x2="-9"/><circle class="cd" r="5" cx="-9" cy="-9"/><rect x="' + P.l + '" y="0" width="' + (W - P.l - P.r) + '" height="' + H + '" fill="transparent" class="hit"/></svg>';
+      var svg = box.firstChild, hit = svg.querySelector('.hit'), cx = svg.querySelector('.cx'), cd = svg.querySelector('.cd');
+      function at(clientX) {
+        var r = svg.getBoundingClientRect(), x = (clientX - r.left) * (W / r.width);
+        var i = Math.max(0, Math.min(data.length - 1, Math.round((x - P.l) / ((W - P.l - P.r) / Math.max(1, data.length - 1)))));
+        cx.setAttribute('x1', X(i)); cx.setAttribute('x2', X(i)); cd.setAttribute('cx', X(i)); cd.setAttribute('cy', Y(data[i].value));
+        return '<b>' + esc(data[i].title || data[i].label) + '</b><br>' + esc(fmt(data[i].value) + ' ' + (o.unit || ''));
+      }
+      bindTip(hit, function (e) { return at(e.clientX); });
+      hit.addEventListener('mouseleave', function () { cx.setAttribute('x1', -9); cx.setAttribute('x2', -9); cd.setAttribute('cx', -9); });
+    }
+    draw();
+    if (window.ResizeObserver) { var t; new ResizeObserver(function () { clearTimeout(t); t = setTimeout(draw, 120); }).observe(box); }
+    if (o.table !== false) tableToggle(host, [o.xName || 'วันที่', o.yName || 'จำนวน'], data.map(function (d) { return [d.title || d.label, fmt(d.value)]; }));
+    return box;
+  }
+  /** โดนัท segs: [{ label, value, cls }] cls = ok | wait | muted | pri */
+  function donut(host, segs, o) {
+    o = o || {};
+    var total = segs.reduce(function (s, x) { return s + x.value; }, 0);
+    var R = 46, C = 2 * Math.PI * R, off = 0, gap = total && segs.filter(function (x) { return x.value; }).length > 1 ? 2 : 0;
+    var arcs = segs.map(function (x, i) {
+      var len = total ? x.value / total * C : 0, s = '<circle r="' + R + '" cx="60" cy="60" class="seg ' + (x.cls || 'pri') + '" data-i="' + i + '" stroke-dasharray="' + Math.max(0, len - gap).toFixed(2) + ' ' + C.toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '"/>';
+      off += len; return s;
+    }).join('');
+    var w = el('div', { class: 'ch-donut' });
+    w.innerHTML = '<svg viewBox="0 0 120 120" role="img" aria-label="' + esc(o.aria || '') + '"><circle r="' + R + '" cx="60" cy="60" class="track"/><g transform="rotate(-90 60 60)">' + arcs + '</g>' +
+      '<text x="60" y="58" text-anchor="middle" class="c1">' + esc(o.center !== undefined ? o.center : total) + '</text><text x="60" y="76" text-anchor="middle" class="c2">' + esc(o.sub || '') + '</text></svg>';
+    var lg = el('ul', { class: 'ch-legend' });
+    segs.forEach(function (x) { lg.appendChild(el('li', { class: x.cls || 'pri' })).innerHTML = '<i></i>' + esc(x.label) + ' <b>' + fmt(x.value) + '</b>' + (total ? ' <span class="muted">(' + Math.round(x.value / total * 100) + '%)</span>' : ''); });
+    w.appendChild(lg);
+    $$('circle.seg', w).forEach(function (c) { var x = segs[Number(c.getAttribute('data-i'))]; bindTip(c, '<b>' + esc(x.label) + '</b><br>' + fmt(x.value) + (total ? ' (' + Math.round(x.value / total * 100) + '%)' : '')); });
+    host.appendChild(w);
+    return w;
+  }
+  /** การ์ดกราฟพร้อมหัวข้อ */
+  function card(title, sub, cls) {
+    var c = el('div', { class: 'card ch-card ' + (cls || '') });
+    c.innerHTML = '<div class="ch-head"><h3>' + esc(title) + '</h3>' + (sub ? '<span class="small muted">' + esc(sub) + '</span>' : '') + '</div>';
+    return c;
+  }
+  /** แถว KPI: [{ label, value, sub, icon, tone }] */
+  function kpis(host, list) {
+    var k = el('div', { class: 'kpis' });
+    list.forEach(function (x) {
+      var c = el('div', { class: 'kpi' + (x.tone ? ' ' + x.tone : '') });
+      c.innerHTML = (x.icon ? '<span class="kpi-ic" aria-hidden="true">' + x.icon + '</span>' : '') + '<span>' + esc(x.label) + '</span><b>' + esc(x.value) + '</b><span class="small">' + esc(x.sub || '') + '</span>';
+      k.appendChild(c);
+    });
+    host.appendChild(k);
+    return k;
+  }
+  /** วันที่ 'YYYY-MM-DD' → '14 พ.ย.' */
+  function dayLabel(d) { var x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); }
+  return { hbars: hbars, columns: columns, area: area, donut: donut, card: card, kpis: kpis, dayLabel: dayLabel, tip: bindTip };
+})();
+
+/* ข้อความที่คัดลอกจากภายในระบบเอง (เช่น โจทย์ ใบความรู้) วางในพื้นที่ทำงานได้ */
+document.addEventListener('copy', function () { try { if (window.ClipGuard) ClipGuard.remember(String(window.getSelection() || '')); } catch (e) {} }, true);
+
 function applyTheme(settings) {
   if (settings && /^#[0-9a-f]{6}$/i.test(settings.primaryColor || '')) document.documentElement.style.setProperty('--primary', settings.primaryColor);
 }

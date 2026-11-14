@@ -6,7 +6,7 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'dist', 'demo.html'));
 const src = p => fs.readFileSync(path.join(root, 'src', p), 'utf8');
 const ctx = vm.createContext({});
-vm.runInContext(src('Core.gs') + '\n' + src('Content.gs') + '\n' + src('Content2.gs') + '\nthis.seed = getSeedCourse_(); this.cmp = compareOutput_;', ctx);
+vm.runInContext(src('Core.gs') + '\n' + src('Content.gs') + '\n' + src('Content2.gs') + '\n' + src('Content3.gs') + '\nthis.seed = getSeedCourse_(); this.cmp = compareOutput_;', ctx);
 const only = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7);
 const server = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(html); }).listen(0);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
@@ -20,8 +20,8 @@ const errText = r => r.errors.filter(e => e.kind !== 'resource').map(e => (e.lin
   page.on('pageerror', e => console.log('PAGEERROR', e.message));
   await page.goto('http://127.0.0.1:' + server.address().port + '/', { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.WebRunner, { timeout: 180000 });
-  const tests = (code, list, lang) => page.evaluate((c, l, g) => WebRunner.tests(c, l, { lang: g, timeoutMs: 90000 }), code, list, lang || 'html');
-  const one = async (code, check, lang) => (await tests(code, [{ check }], lang))[0];
+  const tests = (code, list, lang, sheets) => page.evaluate((c, l, g, sh) => WebRunner.tests(c, l, { lang: g, sheets: sh || undefined, timeoutMs: 90000 }), code, list, lang || 'html', sheets || null);
+  const one = async (code, check, lang, sheets) => (await tests(code, [{ check }], lang, sheets))[0];
   const logs = code => page.evaluate(c => WebRunner.logs(c, 'js'), code);
 
   if (!only || only === 'basic') {
@@ -85,6 +85,15 @@ const errText = r => r.errors.filter(e => e.kind !== 'resource').map(e => (e.lin
       const r = await one('<style>.b{display:flex} @media (max-width: 600px){ .b{display:block} }</style><div class="b">x</div>', 'return css(".b","display") + "," + innerWidth');
       assert.strictEqual(r.output, 'block,360');
     });
+    await t('โหมด gas: SpreadsheetApp จำลอง + ชุดตรวจอ้างเซลล์ข้ามแท็บ + ข้อมูลชุดซ่อนต่อชุด', async () => {
+      const rs = await tests('function add(x) { SpreadsheetApp.getActive().getSheetByName("T").appendRow([x, new Date()]); return SpreadsheetApp.getActive().getSheetByName("T").getLastRow(); }',
+        [{ check: 'return add("a") + "|" + cell("T!A2")' }, { check: 'return add("b") + "|" + cell("T!A3")', sheets: { T: [['h'], ['old']] } }], 'gas', { T: [['h']] });
+      assert.strictEqual(rs[0].output, '2|a', JSON.stringify(rs[0])); assert.strictEqual(rs[1].output, '3|b', JSON.stringify(rs[1]));
+    });
+    await t('โหมด gas: error ในฟังก์ชันบอกเลขบรรทัดของ Code.gs', async () => {
+      const r = await one('function f() {\n  return 1;\n}\nnul.x;', 'return 1', 'gas');
+      assert.ok(r.errors.some(e => e.line === 4), JSON.stringify(r.errors));
+    });
     await t('alert ไม่บล็อกการตรวจ', async () => {
       const r = await one('<script>alert("hi"); confirm("x");</script><p>ok</p>', 'return text("p") + logs.length');
       assert.strictEqual(r.output, 'ok0');
@@ -98,13 +107,14 @@ const errText = r => r.errors.filter(e => e.kind !== 'resource').map(e => (e.lin
       for (const tk of (a.data.tasks || [])) {
         if (tk.lang === 'python') continue;
         await t(a.id + ' ' + tk.title, async () => {
-          const rs = await tests(tk.solution, tk.tests, tk.lang === 'js' ? 'js' : 'html');
+          const L = tk.lang === 'js' || tk.lang === 'gas' ? tk.lang : 'html';
+          const rs = await tests(tk.solution, tk.tests, L, tk.sheets);
           rs.forEach((r, k) => {
             assert.ok(!r.error, 'ชุด ' + (k + 1) + ' (' + tk.tests[k].label + '): ' + JSON.stringify(r.error));
             assert.ok(ctx.cmp(r.output, tk.tests[k].expected, tk.tests[k].compare), 'ชุด ' + (k + 1) + ' (' + tk.tests[k].label + '): ได้ ' + JSON.stringify(r.output) + ' ต้องการ ' + JSON.stringify(tk.tests[k].expected));
           });
           const bad = rs.map(r => errText(r)).filter(Boolean); assert.ok(!bad.length, 'เฉลยมี error: ' + bad[0]);
-          const st = await tests(tk.starterCode || '', tk.tests, tk.lang === 'js' ? 'js' : 'html');
+          const st = await tests(tk.starterCode || '', tk.tests, L, tk.sheets);
           assert.ok(st.some((r, k) => r.error || !ctx.cmp(r.output, tk.tests[k].expected, tk.tests[k].compare)), 'โค้ดตั้งต้นไม่ควรผ่านทุกชุด');
         });
       }
@@ -114,11 +124,11 @@ const errText = r => r.errors.filter(e => e.kind !== 'resource').map(e => (e.lin
         });
       }
       if (a.type === 'knowledge') {
-        const blocks = []; a.data.content.replace(/```(html|js)([^\n]*)\n([\s\S]*?)\n```/g, (m, l, f, c) => { if (!/norun/.test(f)) blocks.push({ lang: l, code: c }); });
+        const blocks = []; a.data.content.replace(/```(html|js|gas)([^\n]*)\n([\s\S]*?)\n```/g, (m, l, f, c) => { if (!/norun/.test(f)) blocks.push({ lang: l, code: c }); });
         await t(a.id + ' ตัวอย่างโค้ด ' + blocks.length + ' บล็อกรันได้ไม่มี error', async () => {
           assert.ok(blocks.length >= 3, 'ควรมีตัวอย่างอย่างน้อย 3 บล็อก');
           for (const [i, b] of blocks.entries()) {
-            const r = b.lang === 'js' ? await logs(b.code) : await one(b.code, 'await wait(400); return 1');
+            const r = b.lang === 'js' ? await logs(b.code) : b.lang === 'gas' ? await one(b.code, 'return 1', 'gas') : await one(b.code, 'await wait(400); return 1');
             assert.ok(!errText(r), 'บล็อก ' + (i + 1) + ': ' + errText(r) + '\n' + b.code.slice(0, 300));
           }
         });

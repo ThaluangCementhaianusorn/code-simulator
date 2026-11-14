@@ -8,17 +8,18 @@
  *               settings(), secret(k), setSecret(k,v), cacheGet(k), cachePut(k,v,sec), cacheRemove(k),
  *               now(), uuid(), hash(s), lock(fn), webAppUrl(), activeUserEmail()
  */
-var APP_VERSION = '2.0.0';
+var APP_VERSION = '2.1.0';
 
 var SCHEMA = {
   Students: ['id', 'studentCode', 'prefix', 'firstName', 'lastName', 'room', 'pinHash', 'status', 'isSample', 'createdAt'],
-  Units: ['id', 'order', 'title', 'mission', 'icon', 'summary', 'passPercent', 'status'],
+  Units: ['id', 'order', 'title', 'mission', 'icon', 'summary', 'passPercent', 'status', 'kind'],
   Activities: ['id', 'unitId', 'order', 'type', 'title', 'dataJson', 'status'],
   Attempts: ['id', 'studentId', 'activityId', 'attemptNo', 'submittedAt', 'score', 'maxScore', 'detailJson'],
   HintsUsed: ['id', 'studentId', 'activityId', 'taskIndex', 'hintIndex', 'at'],
   QuizSessions: ['id', 'studentId', 'activityId', 'startedAt', 'deadlineAt', 'submittedAt', 'orderJson'],
   Overrides: ['id', 'studentId', 'activityId', 'score', 'reason', 'by', 'at'],
   Certificates: ['id', 'certNo', 'studentId', 'unitId', 'title', 'percent', 'level', 'issuedAt', 'updatedAt', 'verifyCode'],
+  Integrity: ['id', 'studentId', 'activityId', 'sessionId', 'kind', 'detail', 'at'],
   Log: ['id', 'at', 'actor', 'action', 'detail']
 };
 
@@ -41,6 +42,10 @@ var DEFAULT_SETTINGS = {
   signer1Position: 'ครูผู้สอน',
   signer2Name: '',
   signer2Position: 'ผู้อำนวยการ',
+  signer1Sig: '',
+  signer2Sig: '',
+  integrityPenalty: '10',
+  quizMaxStrikes: '2',
   adminEmails: '',
   publicUrl: ''
 };
@@ -111,8 +116,16 @@ function normalizeAnswer_(s) { return String(s === null || s === undefined ? '' 
 function activityMax_(a) {
   var d = a.data || {};
   if (a.type === 'knowledge') return 0;
-  if (a.type === 'quiz') return sum_(d.questions || [], function (q) { return num_(q.score, 1); });
+  if (a.type === 'quiz') {
+    var qs = d.questions || [], all = sum_(qs, function (q) { return num_(q.score, 1); });
+    return quizDraw_(d) < qs.length ? round1_(all * quizDraw_(d) / qs.length) : all;
+  }
   return sum_(d.tasks || [], taskMax_);
+}
+/** จำนวนข้อที่สุ่มออกมาให้ทำ (drawCount = สุ่มจากคลังข้อสอบ, ไม่ระบุ = ทุกข้อ) */
+function quizDraw_(d) {
+  var n = (d.questions || []).length, k = num_(d.drawCount, 0);
+  return k > 0 && k < n ? k : n;
 }
 function taskMax_(t) { return sum_(t.tests || [], function (x) { return num_(x.score, 1); }); }
 
@@ -149,8 +162,10 @@ function computeProgress_(course, atts, ovs, S) {
     var p = act[o.activityId]; if (!p) return;
     p.override = num_(o.score); p.best = p.override; p.done = true;
   });
-  var prevPassed = true, totalE = 0, totalM = 0, allPassed = course.units.length > 0;
+  var prevPassed = true, totalE = 0, totalM = 0, bonusE = 0, bonusM = 0;
+  var allPassed = course.units.some(function (u) { return u.kind !== 'bonus'; });
   var units = course.units.map(function (u) {
+    var bonus = u.kind === 'bonus';
     var list = course.acts.filter(function (a) { return a.unitId === u.id; });
     var earned = sum_(list, function (a) { return act[a.id].best || 0; });
     var max = sum_(list, function (a) { return a.max; });
@@ -159,16 +174,21 @@ function computeProgress_(course, atts, ovs, S) {
     var percent = max > 0 ? round1_(earned / max * 100) : (allDone ? 100 : 0);
     var need = num_(u.passPercent, basePass);
     var passed = allDone && percent >= need;
-    var locked = S.lockSequential === 'yes' && !prevPassed;
-    prevPassed = passed;
-    if (!passed) allPassed = false;
-    totalE += earned; totalM += max;
-    return { id: u.id, earned: earned, max: max, percent: percent, need: need, doneCount: doneCount, total: list.length,
+    // ภารกิจคะแนนพิเศษ (kind = bonus): เปิดได้เสมอ ไม่นับรวมคะแนนหลัก และไม่เป็นเงื่อนไขจบหลักสูตร
+    var locked = !bonus && S.lockSequential === 'yes' && !prevPassed;
+    if (bonus) { bonusE += earned; bonusM += max; }
+    else {
+      prevPassed = passed;
+      if (!passed) allPassed = false;
+      totalE += earned; totalM += max;
+    }
+    return { id: u.id, earned: earned, max: max, percent: percent, need: need, doneCount: doneCount, total: list.length, bonus: bonus,
       allDone: allDone, passed: passed, locked: locked, level: passed ? levelOf_(percent) : null };
   });
   var unitById = {}; units.forEach(function (u) { unitById[u.id] = u; });
   var overall = totalM > 0 ? round1_(totalE / totalM * 100) : 0;
-  return { act: act, units: units, unitById: unitById, earned: totalE, max: totalM, percent: overall, allPassed: allPassed };
+  return { act: act, units: units, unitById: unitById, earned: totalE, max: totalM, percent: overall, allPassed: allPassed,
+    bonus: { earned: round1_(bonusE), max: bonusM, percent: bonusM > 0 ? round1_(bonusE / bonusM * 100) : 0 } };
 }
 
 function progressFor_(store, studentId, course, S) {
@@ -185,7 +205,7 @@ function syncCertificates_(store, student, course, prog, S) {
   var targets = [];
   course.units.forEach(function (u, i) {
     var p = prog.unitById[u.id];
-    if (p && p.passed) targets.push({ unitId: u.id, title: 'ภารกิจที่ ' + (i + 1) + ': ' + u.title, percent: p.percent });
+    if (p && p.passed) targets.push({ unitId: u.id, title: (p.bonus ? 'ภารกิจพิเศษ: ' : 'ภารกิจที่ ' + (i + 1) + ': ') + u.title, percent: p.percent });
   });
   if (prog.allPassed) targets.push({ unitId: 'COURSE', title: 'สำเร็จหลักสูตร ' + S.courseName, percent: prog.percent });
   var seq = certs.length;
@@ -217,7 +237,38 @@ function publicSettings_(S, store) {
   return { schoolName: S.schoolName, department: S.department, courseName: S.courseName, courseCode: S.courseCode, courseCredit: S.courseCredit, courseDescription: S.courseDescription, academicYear: S.academicYear, semester: S.semester,
     passPercent: num_(S.passPercent, 60), hintPenalty: num_(S.hintPenalty, 10), primaryColor: S.primaryColor, logoUrl: S.logoUrl,
     signer1Name: S.signer1Name, signer1Position: S.signer1Position, signer2Name: S.signer2Name, signer2Position: S.signer2Position,
+    integrityPenalty: num_(S.integrityPenalty, 10), quizMaxStrikes: num_(S.quizMaxStrikes, 2),
     webAppUrl: S.publicUrl || store.webAppUrl(), version: APP_VERSION };
+}
+/** ค่าที่ใช้พิมพ์เกียรติบัตร = publicSettings + ภาพลายเซ็น (ไม่ส่งไปทุกหน้าเพราะข้อมูลภาพมีขนาดใหญ่) */
+function certSettings_(S, store) {
+  var o = publicSettings_(S, store);
+  o.signer1Sig = S.signer1Sig || ''; o.signer2Sig = S.signer2Sig || '';
+  return o;
+}
+
+/** จำนวนการส่งงานรายวันย้อนหลัง n วัน (ใช้วาดกราฟ) → [{ d: 'YYYY-MM-DD', n }] */
+function activitySeries_(atts, now, n) {
+  var day = 86400000, end = new Date(now.getTime() + 7 * 3600000); // นับวันตามเวลาไทย (UTC+7)
+  var keys = [], idx = {};
+  for (var i = n - 1; i >= 0; i--) { var k = new Date(end.getTime() - i * day).toISOString().slice(0, 10); idx[k] = keys.length; keys.push({ d: k, n: 0 }); }
+  atts.forEach(function (t) {
+    if (num_(t.maxScore) <= 0) return;
+    var d = new Date(t.submittedAt); if (isNaN(d)) return;
+    var k = new Date(d.getTime() + 7 * 3600000).toISOString().slice(0, 10);
+    if (idx[k] !== undefined) keys[idx[k]].n++;
+  });
+  return keys;
+}
+
+/* ---------------- ความซื่อสัตย์ทางวิชาการ (กันคัดลอก/ทุจริต) ---------------- */
+var INTEGRITY_KINDS = { paste: 'วางข้อความจากภายนอก', drop: 'ลากข้อความจากภายนอกมาวาง', copy: 'คัดลอกข้อสอบ', leave: 'ออกจากหน้าสอบ/สลับแท็บ', print: 'สั่งพิมพ์/บันทึกหน้าสอบ', devtools: 'เปิดเครื่องมือนักพัฒนา' };
+function integrityOf_(store, studentId, activityId, sessionId) {
+  return store.all('Integrity').filter(function (x) { return x.studentId === studentId && x.activityId === activityId && (!sessionId || x.sessionId === sessionId); });
+}
+/** คะแนนที่ถูกหักจากการทุจริต = pct% ของคะแนนเต็ม ต่อ 1 ครั้ง (ไม่เกินคะแนนที่ได้) */
+function integrityPenalty_(earned, max, count, pct) {
+  return earned > 0 && count > 0 ? Math.min(earned, round1_(max * pct / 100 * count)) : 0;
 }
 
 /* ---------------- สิทธิ์ ---------------- */
@@ -265,7 +316,15 @@ var API_ = {};
 
 API_.info = function (store) {
   var out = publicSettings_(settings_(store), store);
-  try { out.outline = loadCourse_(store).units.map(function (u, i) { return { no: i + 1, icon: u.icon, title: u.title, summary: u.summary }; }); } catch (e) { out.outline = []; }
+  try {
+    var course = loadCourse_(store);
+    out.outline = course.units.map(function (u, i) { return { no: i + 1, icon: u.icon, title: u.title, summary: u.summary, bonus: u.kind === 'bonus',
+      acts: course.acts.filter(function (a) { return a.unitId === u.id; }).length }; });
+    out.stats = { units: course.units.length, activities: course.acts.length,
+      tasks: sum_(course.acts, function (a) { return (a.data.tasks || []).length; }),
+      students: store.all('Students').filter(function (s) { return s.status !== 'deleted' && s.status !== 'inactive'; }).length,
+      certificates: store.all('Certificates').length };
+  } catch (e) { out.outline = []; out.stats = null; }
   return out;
 };
 
@@ -311,10 +370,11 @@ API_.courseMap = function (store, p) {
   var certs = store.all('Certificates').filter(function (c) { return c.studentId === st.id; }).map(function (c) { return publicCert_(c, st, S, store); });
   return {
     student: publicStudent_(st), settings: publicSettings_(S, store),
-    overall: { percent: prog.percent, earned: prog.earned, max: prog.max, allPassed: prog.allPassed },
+    overall: { percent: prog.percent, earned: prog.earned, max: prog.max, allPassed: prog.allPassed }, bonus: prog.bonus,
+    activity: activitySeries_(store.all('Attempts').filter(function (t) { return t.studentId === st.id; }), store.now(), 14),
     units: course.units.map(function (u, i) {
       var up = prog.unitById[u.id];
-      return { id: u.id, no: i + 1, title: u.title, mission: u.mission, icon: u.icon, summary: u.summary,
+      return { id: u.id, no: i + 1, title: u.title, mission: u.mission, icon: u.icon, summary: u.summary, bonus: up.bonus,
         percent: up.percent, need: up.need, passed: up.passed, locked: up.locked, level: up.level, doneCount: up.doneCount, total: up.total,
         earned: up.earned, max: up.max,
         activities: course.acts.filter(function (a) { return a.unitId === u.id; }).map(function (a) {
@@ -330,14 +390,15 @@ API_.getActivity = function (store, p) {
   var st = requireStudent_(store, p), ctx = activityForStudent_(store, st, p.activityId), a = ctx.act, d = a.data;
   var ap = ctx.prog.act[a.id];
   var unitIndex = ctx.course.units.map(function (u) { return u.id; }).indexOf(a.unitId);
-  var out = { id: a.id, unitId: a.unitId, unitNo: unitIndex + 1, unitTitle: ctx.course.units[unitIndex].title, type: a.type, typeName: TYPE_NAMES[a.type], title: a.title,
-    max: a.max, best: ap.best, attempts: ap.attempts, done: ap.done, hintPenalty: num_(ctx.S.hintPenalty, 10) };
+  var out = { id: a.id, unitId: a.unitId, unitNo: unitIndex + 1, unitTitle: ctx.course.units[unitIndex].title, unitBonus: ctx.course.units[unitIndex].kind === 'bonus', type: a.type, typeName: TYPE_NAMES[a.type], title: a.title,
+    max: a.max, best: ap.best, attempts: ap.attempts, done: ap.done, hintPenalty: num_(ctx.S.hintPenalty, 10),
+    integrity: { penaltyPct: num_(ctx.S.integrityPenalty, 10), maxStrikes: Math.max(1, num_(ctx.S.quizMaxStrikes, 2)), count: 0 } };
   if (a.type === 'knowledge') { out.content = d.content || ''; return out; }
   if (a.type === 'quiz') {
     var sessions = store.all('QuizSessions').filter(function (q) { return q.studentId === st.id && q.activityId === a.id; });
     var now = store.now().getTime();
     var active = sessions.filter(function (q) { return !q.submittedAt && new Date(q.deadlineAt).getTime() + QUIZ_GRACE_MS > now; })[0];
-    out.intro = d.intro || ''; out.questionCount = (d.questions || []).length; out.timeLimitMin = num_(d.timeLimitMin, 0);
+    out.intro = d.intro || ''; out.questionCount = quizDraw_(d); out.bankSize = (d.questions || []).length; out.timeLimitMin = num_(d.timeLimitMin, 0);
     out.maxAttempts = num_(d.maxAttempts, 0); out.attemptsUsed = sessions.length; out.activeSession = !!active;
     return out;
   }
@@ -347,13 +408,14 @@ API_.getActivity = function (store, p) {
   var lastDetail = last ? parseJson_(last.detailJson, {}) : {};
   out.intro = d.intro || '';
   out.maxAttempts = num_(d.maxAttempts, 0);
+  out.integrity.count = integrityOf_(store, st.id, a.id).length;
   out.tasks = (d.tasks || []).map(function (t, i) {
     var used = hints.filter(function (h) { return num_(h.taskIndex) === i; }).map(function (h) { return num_(h.hintIndex); }).sort();
     var lt = (lastDetail.tasks || [])[i];
     return { title: t.title, prompt: t.prompt || '', lang: t.lang || 'html', starterCode: t.starterCode || '', sampleInput: t.sampleInput || '', max: taskMax_(t),
       hintCount: (t.hints || []).length, hints: used.map(function (k) { return (t.hints || [])[k]; }).filter(String),
-      lastCode: lt ? lt.code : null,
-      tests: (t.tests || []).map(function (x) { return { input: x.input || '', check: x.check || '', label: x.label || '', expected: x.hidden ? null : String(x.expected), hidden: !!x.hidden, score: num_(x.score, 1), compare: x.compare || 'trim' }; }) };
+      lastCode: lt ? lt.code : null, sheets: t.sheets || null, call: t.call || '',
+      tests: (t.tests || []).map(function (x) { return { input: x.input || '', check: x.check || '', label: x.label || '', expected: x.hidden ? null : String(x.expected), hidden: !!x.hidden, score: num_(x.score, 1), compare: x.compare || 'trim', sheets: x.sheets || null }; }) };
   });
   return out;
 };
@@ -417,11 +479,15 @@ API_.submitTasks = function (store, p) {
       total += earned; max += tmax;
       return { code: code, earned: earned, max: tmax, penalty: penalty, hintsUsed: nh, results: results };
     });
+    // หักคะแนนเมื่อพยายามวางข้อความจากภายนอกลงพื้นที่ทำงาน (บันทึกไว้ในแท็บ Integrity)
+    var vio = integrityOf_(store, st.id, a.id).length;
+    var ipen = integrityPenalty_(round1_(total), max, vio, num_(ctx.S.integrityPenalty, 10));
+    total = round1_(total - ipen);
     store.insert('Attempts', { id: store.uuid(), studentId: st.id, activityId: a.id, attemptNo: ap.attempts + 1, submittedAt: iso_(store),
-      score: round1_(total), maxScore: max, detailJson: JSON.stringify({ tasks: detail.map(function (x) { return { code: x.code, earned: x.earned, max: x.max, penalty: x.penalty, pass: x.results.map(function (r) { return r.pass; }) }; }) }) });
+      score: round1_(total), maxScore: max, detailJson: JSON.stringify({ integrity: { count: vio, penalty: ipen }, tasks: detail.map(function (x) { return { code: x.code, earned: x.earned, max: x.max, penalty: x.penalty, pass: x.results.map(function (r) { return r.pass; }) }; }) }) });
     var r = afterChange_(store, st, ctx.course, ctx.S);
     return { score: round1_(total), max: max, best: r.prog.act[a.id].best, attemptNo: ap.attempts + 1, tasks: detail.map(function (x) { delete x.code; return x; }),
-      unit: r.prog.unitById[a.unitId], newCertificates: r.issued };
+      integrity: { count: vio, penalty: ipen }, unit: r.prog.unitById[a.unitId], newCertificates: r.issued };
   });
 };
 
@@ -447,7 +513,10 @@ API_.startQuiz = function (store, p) {
       var maxAtt = num_(d.maxAttempts, 0);
       if (maxAtt && sessions.length >= maxAtt) fail_('ทำแบบทดสอบครบ ' + maxAtt + ' ครั้งแล้ว');
       var qs = d.questions || [];
-      var order = (d.shuffle === false ? qs : shuffle_(qs)).map(function (q) {
+      // สุ่มลำดับข้อ (และสุ่มเลือกจากคลังเมื่อกำหนด drawCount) ทุกคนจึงได้ข้อสอบไม่เหมือนกัน
+      var drawn = quizDraw_(d) < qs.length ? shuffle_(qs).slice(0, quizDraw_(d)) : qs;
+      var picked = d.shuffle === false ? qs.filter(function (q) { return drawn.indexOf(q) >= 0; }) : shuffle_(drawn);
+      var order = picked.map(function (q) {
         var idx = (q.choices || []).map(function (_, i) { return i; });
         return { id: q.id, choices: q.type === 'mc' && d.shuffleChoices !== false ? shuffle_(idx) : idx };
       });
@@ -458,6 +527,7 @@ API_.startQuiz = function (store, p) {
     }
     return { sessionId: active.id, deadlineAt: active.deadlineAt, serverNow: now.toISOString(), timeLimitMin: num_(d.timeLimitMin, 0),
       attemptNo: sessions.filter(function (q) { return q.id !== active.id; }).length + 1,
+      strikes: integrityOf_(store, st.id, a.id, active.id).length, maxStrikes: Math.max(1, num_(ctx.S.quizMaxStrikes, 2)), penaltyPct: num_(ctx.S.integrityPenalty, 10),
       questions: publicQuestions_(d, parseJson_(active.orderJson, [])) };
   });
 };
@@ -487,21 +557,31 @@ API_.submitQuiz = function (store, p) {
     var late = now.getTime() > new Date(sess.deadlineAt).getTime() + QUIZ_GRACE_MS;
     var answers = p.answers || {};
     var total = 0, max = 0;
-    var results = (d.questions || []).map(function (q) {
+    var inSession = {}; parseJson_(sess.orderJson, []).forEach(function (o) { inSession[o.id] = true; });
+    var results = (d.questions || []).filter(function (q) { return inSession[q.id]; }).map(function (q) {
       var sc = num_(q.score, 1), ok = !late && gradeQuestion_(q, answers[q.id]);
       max += sc; if (ok) total += sc;
       return { id: q.id, correct: ok, score: ok ? sc : 0, max: sc };
     });
+    // สุ่มจากคลัง: ปรับคะแนนให้เทียบกับคะแนนเต็มของกิจกรรม
+    if (max > 0 && max !== a.max) { total = round1_(total / max * a.max); max = a.max; }
+    // ทุจริต: หักคะแนนตามจำนวนครั้ง และถ้าครบจำนวนที่กำหนดหรือถูกให้ออกจากการสอบ ถือว่าทุจริต
+    var strikes = integrityOf_(store, st.id, a.id, sess.id).length, maxStrikes = Math.max(1, num_(ctx.S.quizMaxStrikes, 2));
+    var cheat = !!p.forced || strikes >= maxStrikes;
+    var ipen = integrityPenalty_(total, max, strikes, num_(ctx.S.integrityPenalty, 10));
+    total = round1_(total - ipen);
+    if (cheat) log_(store, st.studentCode, 'ทุจริตในการสอบ', a.title + ' (' + strikes + ' ครั้ง)');
     store.update('QuizSessions', sess.id, { submittedAt: now.toISOString() });
     var used = store.all('QuizSessions').filter(function (q) { return q.studentId === st.id && q.activityId === a.id; }).length;
     var maxAtt = num_(d.maxAttempts, 0);
     var finished = maxAtt > 0 && used >= maxAtt;
     var ap = ctx.prog.act[a.id];
     store.insert('Attempts', { id: store.uuid(), studentId: st.id, activityId: a.id, attemptNo: ap.attempts + 1, submittedAt: now.toISOString(),
-      score: total, maxScore: max, detailJson: JSON.stringify({ sessionId: sess.id, late: late, answers: answers, correct: results.map(function (r) { return r.correct; }) }) });
+      score: total, maxScore: max, detailJson: JSON.stringify({ sessionId: sess.id, late: late, answers: answers, correct: results.map(function (r) { return r.correct; }), integrity: { count: strikes, penalty: ipen, cheat: cheat } }) });
     var r = afterChange_(store, st, ctx.course, ctx.S);
     var qById = {}; (d.questions || []).forEach(function (q) { qById[q.id] = q; });
     return { score: total, max: max, late: late, best: r.prog.act[a.id].best, attemptsUsed: used, maxAttempts: maxAtt,
+      integrity: { count: strikes, penalty: ipen, cheat: cheat },
       revealAnswers: finished || d.revealAnswers === 'always',
       results: results.map(function (x) {
         var q = qById[x.id];
@@ -513,16 +593,53 @@ API_.submitQuiz = function (store, p) {
   });
 };
 
+/**
+ * บันทึกพฤติกรรมที่ไม่ซื่อสัตย์ (วางข้อความจากภายนอกในใบงาน / คัดลอกหรือออกจากหน้าแบบทดสอบ)
+ * p = { activityId, kind: paste|drop|copy|leave|print|devtools, sessionId (แบบทดสอบ), detail }
+ */
+API_.reportIntegrity = function (store, p) {
+  var st = requireStudent_(store, p);
+  var kind = INTEGRITY_KINDS[p.kind] ? p.kind : 'paste';
+  return store.lock(function () {
+    var ctx = activityForStudent_(store, st, p.activityId), a = ctx.act;
+    if (a.type === 'knowledge') fail_('ใบความรู้ไม่มีการตรวจการคัดลอก');
+    var sid = '';
+    if (a.type === 'quiz') {
+      var sess = store.all('QuizSessions').filter(function (q) { return q.id === p.sessionId && q.studentId === st.id && q.activityId === a.id && !q.submittedAt; })[0];
+      if (!sess) fail_('ไม่พบรอบการสอบที่กำลังทำ');
+      sid = sess.id;
+    }
+    var maxStrikes = Math.max(1, num_(ctx.S.quizMaxStrikes, 2)), pct = num_(ctx.S.integrityPenalty, 10);
+    // เหตุการณ์เดียวกันอาจถูกจับได้หลายทาง (เช่น blur + สลับแท็บ) นับครั้งเดียวภายใน 2 วินาที
+    var ck = 'int_' + st.id + '_' + a.id + '_' + kind;
+    if (!store.cacheGet(ck)) {
+      store.cachePut(ck, '1', 2);
+      store.insert('Integrity', { id: store.uuid(), studentId: st.id, activityId: a.id, sessionId: sid, kind: kind, detail: String(p.detail || '').slice(0, 200), at: iso_(store) });
+      log_(store, st.studentCode, 'แจ้งเตือนทุจริต', a.title + ' · ' + INTEGRITY_KINDS[kind]);
+    }
+    var count = integrityOf_(store, st.id, a.id, sid).length;
+    return { count: count, penaltyPct: pct, maxStrikes: maxStrikes, kickOut: a.type === 'quiz' && count >= maxStrikes, kindName: INTEGRITY_KINDS[kind] };
+  });
+};
+
 API_.myScores = function (store, p) {
   var st = requireStudent_(store, p), S = settings_(store), course = loadCourse_(store);
   var prog = progressFor_(store, st.id, course, S);
   var atts = store.all('Attempts').filter(function (t) { return t.studentId === st.id && num_(t.maxScore) > 0; })
     .sort(function (a, b) { return String(a.submittedAt) < String(b.submittedAt) ? 1 : -1; }).slice(0, 50)
     .map(function (t) { var a = course.actById[t.activityId]; return { at: t.submittedAt, title: a ? a.title : '-', type: a ? TYPE_NAMES[a.type] : '', score: num_(t.score), max: num_(t.maxScore) }; });
-  return { student: publicStudent_(st), overall: { percent: prog.percent, earned: prog.earned, max: prog.max },
+  var byType = {};
+  course.acts.forEach(function (a) {
+    if (!a.max) return;
+    var x = byType[a.type] = byType[a.type] || { type: a.type, name: TYPE_NAMES[a.type], earned: 0, max: 0 };
+    x.earned += prog.act[a.id].best || 0; x.max += a.max;
+  });
+  return { student: publicStudent_(st), overall: { percent: prog.percent, earned: prog.earned, max: prog.max }, bonus: prog.bonus,
+    byType: Object.keys(byType).map(function (k) { var x = byType[k]; x.percent = x.max ? round1_(x.earned / x.max * 100) : 0; return x; }),
+    activity: activitySeries_(store.all('Attempts').filter(function (t) { return t.studentId === st.id; }), store.now(), 14),
     units: course.units.map(function (u, i) {
       var up = prog.unitById[u.id];
-      return { no: i + 1, title: u.title, percent: up.percent, passed: up.passed, level: up.level, earned: up.earned, max: up.max,
+      return { no: i + 1, title: u.title, icon: u.icon, bonus: up.bonus, percent: up.percent, passed: up.passed, level: up.level, earned: up.earned, max: up.max,
         activities: course.acts.filter(function (a) { return a.unitId === u.id; }).map(function (a) {
           var x = prog.act[a.id]; return { title: a.title, typeName: TYPE_NAMES[a.type], best: x.best, max: a.max, attempts: x.attempts, done: x.done, override: x.override !== null };
         }) };
@@ -539,7 +656,7 @@ API_.getCertificate = function (store, p) {
   }
   if (!allowed) fail_('ไม่พบเกียรติบัตร หรือรหัสตรวจสอบไม่ถูกต้อง');
   var st = store.all('Students').filter(function (x) { return x.id === c.studentId; })[0];
-  return { cert: publicCert_(c, st, S, store), settings: publicSettings_(S, store) };
+  return { cert: publicCert_(c, st, S, store), settings: certSettings_(S, store) };
 };
 
 /* ---------------- API ฝั่งครู ---------------- */
@@ -573,8 +690,24 @@ API_.tDashboard = function (store, p) {
       certificates: certs.length,
       finished: active.filter(function (r) { return r.prog.allPassed; }).length
     },
+    activity: activitySeries_(all.atts, store.now(), 14),
+    distribution: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map(function (lo) {
+      return { lo: lo, hi: lo + 10, n: active.filter(function (r) { var p = r.prog.percent; return p >= lo && (lo === 90 ? p <= 100 : p < lo + 10); }).length };
+    }),
+    status: {
+      finished: active.filter(function (r) { return r.prog.allPassed; }).length,
+      learning: active.filter(function (r) { return !r.prog.allPassed && r.last; }).length,
+      notStarted: active.filter(function (r) { return !r.last; }).length
+    },
+    integrity: (function () {
+      var rows = store.all('Integrity'), acts = course.actById;
+      return { total: rows.length, students: Object.keys(rows.reduce(function (m, x) { m[x.studentId] = 1; return m; }, {})).length,
+        recent: rows.sort(function (a, b) { return String(a.at) < String(b.at) ? 1 : -1; }).slice(0, 10).map(function (x) {
+          return { at: x.at, name: nameOf[x.studentId] || '-', title: acts[x.activityId] ? acts[x.activityId].title : '-', kind: INTEGRITY_KINDS[x.kind] || x.kind, quiz: !!x.sessionId };
+        }) };
+    })(),
     units: course.units.map(function (u, i) {
-      return { no: i + 1, title: u.title, icon: u.icon,
+      return { no: i + 1, title: u.title, icon: u.icon, bonus: u.kind === 'bonus',
         passed: active.filter(function (r) { return r.prog.unitById[u.id].passed; }).length,
         started: active.filter(function (r) { return r.prog.unitById[u.id].doneCount > 0; }).length,
         avg: active.length ? round1_(sum_(active, function (r) { return r.prog.unitById[u.id].percent; }) / active.length) : 0 };
@@ -591,13 +724,14 @@ API_.tGradebook = function (store, p) {
   var all = allProgress_(store), course = all.course;
   return {
     settings: publicSettings_(all.S, store),
-    units: course.units.map(function (u, i) { return { id: u.id, no: i + 1, title: u.title }; }),
+    units: course.units.map(function (u, i) { return { id: u.id, no: i + 1, title: u.title, icon: u.icon, bonus: u.kind === 'bonus' }; }),
+    integrity: store.all('Integrity').reduce(function (m, x) { m[x.studentId] = (m[x.studentId] || 0) + 1; return m; }, {}),
     activities: course.acts.map(function (a) { return { id: a.id, unitId: a.unitId, type: a.type, typeName: TYPE_NAMES[a.type], title: a.title, max: a.max }; }),
     rows: all.rows.map(function (r) {
       var acts = {}; course.acts.forEach(function (a) { var x = r.prog.act[a.id]; acts[a.id] = { best: x.best, attempts: x.attempts, done: x.done, override: x.override !== null }; });
       var units = {}; r.prog.units.forEach(function (u) { units[u.id] = { percent: u.percent, passed: u.passed, level: u.level ? u.level.name : '' }; });
       return { student: publicStudent_(r.student), status: r.student.status || 'active', isSample: r.student.isSample === 'yes',
-        percent: r.prog.percent, earned: r.prog.earned, max: r.prog.max, allPassed: r.prog.allPassed, last: r.last, acts: acts, units: units };
+        percent: r.prog.percent, earned: r.prog.earned, max: r.prog.max, allPassed: r.prog.allPassed, bonus: r.prog.bonus, last: r.last, acts: acts, units: units };
     })
   };
 };
@@ -612,7 +746,25 @@ API_.tStudentDetail = function (store, p) {
     .map(function (t) { var a = course.actById[t.activityId]; return { at: t.submittedAt, activityId: t.activityId, title: a ? a.title : '-', type: a ? a.type : '', score: num_(t.score), max: num_(t.maxScore), detail: parseJson_(t.detailJson, {}) }; });
   var ovs = store.all('Overrides').filter(function (o) { return o.studentId === st.id; });
   var certs = store.all('Certificates').filter(function (c) { return c.studentId === st.id; }).map(function (c) { return publicCert_(c, st, settings_(store), store); });
-  return { student: publicStudent_(st), status: st.status || 'active', attempts: atts, overrides: ovs, certificates: certs };
+  var integrity = store.all('Integrity').filter(function (x) { return x.studentId === st.id; })
+    .sort(function (a, b) { return String(a.at) < String(b.at) ? 1 : -1; })
+    .map(function (x) { var a = course.actById[x.activityId]; return { at: x.at, title: a ? a.title : '-', kind: INTEGRITY_KINDS[x.kind] || x.kind, quiz: !!x.sessionId }; });
+  return { student: publicStudent_(st), status: st.status || 'active', attempts: atts, overrides: ovs, certificates: certs, integrity: integrity };
+};
+
+/** ครูตั้ง PIN ให้นักศึกษาเอง (ตัวเลข 4–8 หลัก) */
+API_.tSetPin = function (store, p) {
+  var t = requireTeacher_(store, p);
+  var pin = String(p.pin || '').trim();
+  if (!/^\d{4,8}$/.test(pin)) fail_('PIN ต้องเป็นตัวเลข 4–8 หลัก');
+  return store.lock(function () {
+    var st = store.all('Students').filter(function (s) { return s.id === p.studentId; })[0];
+    if (!st) fail_('ไม่พบนักศึกษา');
+    store.update('Students', st.id, { pinHash: pinHash_(store, st.studentCode, pin) });
+    store.cacheRemove('fail_' + String(st.studentCode).trim());
+    log_(store, t.name, 'ตั้ง PIN ใหม่', st.studentCode);
+    return { ok: true, pin: pin, studentCode: st.studentCode, name: fullName_(st) };
+  });
 };
 
 API_.tSaveStudent = function (store, p) {
@@ -737,7 +889,7 @@ API_.tSaveUnit = function (store, p) {
   var t = requireTeacher_(store, p), u = p.unit || {};
   return store.lock(function () {
     if (!String(u.title || '').trim()) fail_('ต้องมีชื่อภารกิจ');
-    var patch = { order: num_(u.order, 1), title: String(u.title).trim(), mission: String(u.mission || ''), icon: String(u.icon || '🎯'), summary: String(u.summary || ''), passPercent: u.passPercent === '' || u.passPercent === undefined ? '' : num_(u.passPercent, 60), status: u.status || 'active' };
+    var patch = { order: num_(u.order, 1), title: String(u.title).trim(), mission: String(u.mission || ''), icon: String(u.icon || '🎯'), summary: String(u.summary || ''), passPercent: u.passPercent === '' || u.passPercent === undefined ? '' : num_(u.passPercent, 60), status: u.status || 'active', kind: u.kind === 'bonus' ? 'bonus' : '' };
     if (u.id && store.all('Units').some(function (x) { return x.id === u.id; })) store.update('Units', u.id, patch);
     else { patch.id = u.id || ('U' + store.uuid().slice(0, 6)); store.insert('Units', patch); }
     log_(store, t.name, 'บันทึกภารกิจ', patch.title);
@@ -767,7 +919,7 @@ API_.tExportCourse = function (store, p) {
   var acts = store.all('Activities');
   return { format: 'code-simulator-course', version: APP_VERSION, courseName: settings_(store).courseName,
     units: store.all('Units').sort(function (a, b) { return num_(a.order) - num_(b.order); }).map(function (u) {
-      return { id: u.id, order: num_(u.order), title: u.title, mission: u.mission, icon: u.icon, summary: u.summary, passPercent: u.passPercent, status: u.status,
+      return { id: u.id, order: num_(u.order), title: u.title, mission: u.mission, icon: u.icon, summary: u.summary, passPercent: u.passPercent, status: u.status, kind: u.kind || '',
         activities: acts.filter(function (a) { return a.unitId === u.id; }).sort(function (a, b) { return num_(a.order) - num_(b.order); })
           .map(function (a) { return { id: a.id, order: num_(a.order), type: a.type, title: a.title, status: a.status, data: parseJson_(a.dataJson, {}) }; }) };
     }) };
@@ -791,7 +943,7 @@ function importCourseData_(store, c) {
   store.removeWhere('Activities', function () { return true; });
   c.units.forEach(function (u, i) {
     var uid = u.id || ('U' + (i + 1));
-    store.insert('Units', { id: uid, order: u.order || i + 1, title: u.title, mission: u.mission || '', icon: u.icon || '🎯', summary: u.summary || '', passPercent: u.passPercent === undefined ? '' : u.passPercent, status: u.status || 'active' });
+    store.insert('Units', { id: uid, order: u.order || i + 1, title: u.title, mission: u.mission || '', icon: u.icon || '🎯', summary: u.summary || '', passPercent: u.passPercent === undefined ? '' : u.passPercent, status: u.status || 'active', kind: u.kind === 'bonus' ? 'bonus' : '' });
     (u.activities || []).forEach(function (a, j) {
       store.insert('Activities', { id: a.id || (uid + '-' + (j + 1)), unitId: uid, order: a.order || j + 1, type: a.type, title: a.title, dataJson: JSON.stringify(a.data || {}), status: a.status || 'active' });
     });
@@ -853,7 +1005,7 @@ function clearSampleData_(store) {
   return store.lock(function () {
     var ids = {}; store.all('Students').forEach(function (s) { if (s.isSample === 'yes') ids[s.id] = true; });
     var mine = function (r) { return !!ids[r.studentId]; };
-    ['Attempts', 'HintsUsed', 'QuizSessions', 'Overrides', 'Certificates'].forEach(function (t) { store.removeWhere(t, mine); });
+    ['Attempts', 'HintsUsed', 'QuizSessions', 'Overrides', 'Certificates', 'Integrity'].forEach(function (t) { store.removeWhere(t, mine); });
     store.removeWhere('Students', function (s) { return !!ids[s.id]; });
     return Object.keys(ids).length;
   });
@@ -879,13 +1031,23 @@ var SETTINGS_HELP = {
   signer1Position: 'ตำแหน่งผู้ลงนามคนที่ 1',
   signer2Name: 'ชื่อผู้ลงนามคนที่ 2 (เช่น ผู้อำนวยการ)',
   signer2Position: 'ตำแหน่งผู้ลงนามคนที่ 2',
+  signer1Sig: 'ภาพลายเซ็นผู้ลงนามคนที่ 1 (ครูผู้สอน) อัปโหลดจากหน้าครู → ตั้งค่า',
+  signer2Sig: 'ภาพลายเซ็นผู้ลงนามคนที่ 2 (ผู้อำนวยการ) อัปโหลดจากหน้าครู → ตั้งค่า',
+  integrityPenalty: 'หักคะแนนต่อการทุจริต 1 ครั้ง (% ของคะแนนเต็มกิจกรรม) เช่น วางข้อความจากภายนอก ออกจากหน้าสอบ',
+  quizMaxStrikes: 'จำนวนครั้งที่ออกจากหน้าสอบ/คัดลอกข้อสอบได้ ก่อนถูกให้ออกจากการสอบอัตโนมัติ',
   adminEmails: 'อีเมลครูที่เข้าหลังบ้านได้ทันทีโดยไม่ต้องใส่รหัส (คั่นด้วย ,) ใช้ได้เมื่อ Deploy แบบในโดเมนวิทยาลัย',
   publicUrl: 'ลิงก์หน้าเว็บบน GitHub Pages (เช่น https://ชื่อผู้ใช้.github.io/code-simulator/) ใช้ทำลิงก์ตรวจสอบเกียรติบัตร เว้นว่าง = ใช้ลิงก์ Apps Script'
 };
 
 function validateSetting_(k, v) {
   v = String(v === undefined || v === null ? '' : v).trim();
-  if (k === 'passPercent' || k === 'hintPenalty') { var n = Number(v); if (v === '' || !isFinite(n) || n < 0 || n > 100) fail_(SETTINGS_HELP[k] + ': ต้องเป็นตัวเลข 0–100'); return String(n); }
+  if (k === 'signer1Sig' || k === 'signer2Sig') {
+    if (v && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(v)) fail_('ลายเซ็นต้องเป็นไฟล์ภาพ PNG / JPG');
+    if (v.length > 45000) fail_('ไฟล์ลายเซ็นใหญ่เกินไป (ต้องไม่เกินประมาณ 33 KB) ลองครอปให้เหลือเฉพาะลายเซ็น');
+    return v;
+  }
+  if (k === 'quizMaxStrikes') { var ms = Number(v); if (!/^\d+$/.test(v) || ms < 1 || ms > 10) fail_(SETTINGS_HELP[k] + ': ต้องเป็นจำนวนเต็ม 1–10'); return String(ms); }
+  if (k === 'passPercent' || k === 'hintPenalty' || k === 'integrityPenalty') { var n = Number(v); if (v === '' || !isFinite(n) || n < 0 || n > 100) fail_(SETTINGS_HELP[k] + ': ต้องเป็นตัวเลข 0–100'); return String(n); }
   if (k === 'lockSequential' && v !== 'yes' && v !== 'no') fail_('lockSequential ต้องเป็น yes หรือ no');
   if (k === 'primaryColor' && !/^#[0-9a-fA-F]{6}$/.test(v)) fail_('สีหลักต้องอยู่ในรูป #RRGGBB เช่น #1E40AF');
   if ((k === 'logoUrl' || k === 'publicUrl') && v && !/^https:\/\/\S+$/.test(v)) fail_(k + ' ต้องขึ้นต้นด้วย https://');
@@ -927,7 +1089,7 @@ API_.tChangePassword = function (store, p) {
 };
 
 /* ---------------- ลบข้อมูล ---------------- */
-var SCORE_TABLES = ['Attempts', 'HintsUsed', 'QuizSessions', 'Overrides'];
+var SCORE_TABLES = ['Attempts', 'HintsUsed', 'QuizSessions', 'Overrides', 'Integrity'];
 
 API_.tDeleteActivity = function (store, p) {
   var t = requireTeacher_(store, p);

@@ -291,6 +291,13 @@ function thaiError(err) {
 }
 
 /* ======================= ตัวแก้ไขโค้ด ======================= */
+/** จำข้อความที่คัดลอกจากตัวแก้ไขในหน้านี้ เพื่อให้วางซ้ำในงานของตัวเองได้ แต่บล็อกข้อความที่มาจากภายนอก */
+var ClipGuard = {
+  last: [],
+  norm: function (s) { return String(s || '').replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim(); },
+  remember: function (s) { s = ClipGuard.norm(s); if (s) { ClipGuard.last.push(s); if (ClipGuard.last.length > 20) ClipGuard.last.shift(); } },
+  allowed: function (t) { t = ClipGuard.norm(t); return !t || ClipGuard.last.indexOf(t) >= 0; }
+};
 function makeEditor(host, code, opts) {
   opts = opts || {};
   var cm = null, ta = null, marks = [];
@@ -303,10 +310,29 @@ function makeEditor(host, code, opts) {
       extraKeys: { Tab: function (c) { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection(ind, 'end'); }, 'Shift-Tab': function (c) { c.indentSelection('subtract'); } }
     });
     if (opts.onChange) cm.on('change', function () { opts.onChange(cm.getValue()); });
+    if (opts.guard) {
+      // พื้นที่ทำงานของใบงาน: วางได้เฉพาะข้อความที่คัดลอกจากในตัวแก้ไขเอง ข้อความจากภายนอกถูกบล็อกและรายงาน
+      cm.setOption('dragDrop', false);
+      var remember = function (c) { ClipGuard.remember(c.getSelection()); };
+      cm.on('copy', remember); cm.on('cut', remember);
+      cm.on('beforeChange', function (c, ch) {
+        if (ch.origin !== 'paste') return;
+        var t = ch.text.join('\n');
+        if (ClipGuard.allowed(t)) return;
+        ch.cancel(); opts.guard('paste', t);
+      });
+      cm.on('drop', function (c, e) { e.preventDefault(); opts.guard('drop', ''); });
+    }
   } else {
     ta = document.createElement('textarea'); ta.className = 'fallback mono'; ta.value = code || ''; ta.spellcheck = false; ta.readOnly = !!opts.readOnly;
     ta.addEventListener('keydown', function (e) { if (e.key === 'Tab') { e.preventDefault(); insertAtTa(ta, ind); } });
     if (opts.onChange) ta.addEventListener('input', function () { opts.onChange(ta.value); });
+    if (opts.guard) {
+      var rememberTa = function () { ClipGuard.remember(ta.value.slice(ta.selectionStart, ta.selectionEnd)); };
+      ta.addEventListener('copy', rememberTa); ta.addEventListener('cut', rememberTa);
+      ta.addEventListener('paste', function (e) { var t = (e.clipboardData && e.clipboardData.getData('text')) || ''; if (!ClipGuard.allowed(t)) { e.preventDefault(); opts.guard('paste', t); } });
+      ta.addEventListener('drop', function (e) { e.preventDefault(); opts.guard('drop', ''); });
+    }
     host.appendChild(ta);
   }
   function insertAtTa(t, s) { var a = t.selectionStart, b = t.selectionEnd; t.value = t.value.slice(0, a) + s + t.value.slice(b); t.selectionStart = t.selectionEnd = a + s.length; t.focus(); t.dispatchEvent(new Event('input')); }
@@ -356,7 +382,7 @@ function Sim(host, o) {
   var trace = el('div', { class: 'trace hidden' });
   root.appendChild(keys); root.appendChild(edHost); root.appendChild(stdinWrap); root.appendChild(tools); root.appendChild(loadbar); root.appendChild(con); root.appendChild(trace);
   host.appendChild(root);
-  var editor = makeEditor(edHost, o.code || '', { onChange: o.onChange });
+  var editor = makeEditor(edHost, o.code || '', { onChange: o.onChange, guard: o.guard });
   editor.refresh();
   var starter = o.starter !== undefined ? o.starter : (o.code || '');
 

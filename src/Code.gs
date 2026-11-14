@@ -66,10 +66,19 @@ function sheetStore_() {
   function table(name) {
     if (memo[name]) return memo[name];
     var sh = ss.getSheetByName(name);
+    if (!sh && SCHEMA[name] && name === 'Integrity') { // แท็บที่เพิ่มในรุ่นใหม่: สร้างให้อัตโนมัติ ไม่ต้องติดตั้งใหม่
+      sh = ss.insertSheet(name);
+      sh.getRange(1, 1, 1, SCHEMA[name].length).setValues([SCHEMA[name]]).setFontWeight('bold').setBackground('#E0E7FF');
+      sh.getRange(1, 1, sh.getMaxRows(), SCHEMA[name].length).setNumberFormat('@'); sh.setFrozenRows(1);
+    }
     if (!sh) throw new Error('ไม่พบแท็บ "' + name + '" กรุณาเลือกเมนู ⚙️ ตั้งค่าระบบ → 1) ติดตั้งระบบ');
     var values = sh.getDataRange().getValues();
     var head = (values[0] || []).map(String).filter(String);
     if (!head.length) head = SCHEMA[name];
+    // คอลัมน์ที่เพิ่มในรุ่นใหม่ (เช่น Units.kind) เติมหัวคอลัมน์ให้เอง
+    (SCHEMA[name] || []).forEach(function (h) {
+      if (head.indexOf(h) < 0) { head.push(h); sh.getRange(1, head.length).setNumberFormat('@').setValue(h); }
+    });
     var rows = [];
     for (var i = 1; i < values.length; i++) {
       var r = values[i];

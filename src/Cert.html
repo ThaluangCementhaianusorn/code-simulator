@@ -36,7 +36,7 @@ var CertView = (function () {
       '<br>รายวิชา ' + esc(S.courseName) + ' ภาคเรียนที่ ' + esc(S.semester) + '/' + esc(S.academicYear) + '</div>' +
       '<div class="level ' + lvKey + '">' + (LEVEL_MEDAL[c.level] || '') + ' ระดับ' + esc(c.level) + ' · ' + fmt(c.percent) + '%</div>' +
       '<div class="date">ให้ไว้ ณ วันที่ ' + thDate(c.issuedAt, true) + '</div>' +
-      '<div class="signs">' + sign(S.signer1Name, S.signer1Position) + sign(S.signer2Name, S.signer2Position) + '</div>' +
+      '<div class="signs">' + sign(S.signer1Name, S.signer1Position, S.signer1Sig) + sign(S.signer2Name, S.signer2Position, S.signer2Sig) + '</div>' +
       '</div><div class="foot"><div>เลขที่ ' + esc(c.certNo) + '<br>ตรวจสอบความถูกต้องได้ด้วยการสแกน QR Code</div><div class="qr"></div></div>';
     stage.appendChild(cert);
     host.appendChild(stage);
@@ -45,8 +45,9 @@ var CertView = (function () {
     function fit() { var w = stage.clientWidth || host.clientWidth || 360, k = Math.min(1, w / 1123); cert.style.transform = 'scale(' + k + ')'; stage.style.height = (794 * k) + 'px'; }
     fit(); window.addEventListener('resize', fit); setTimeout(fit, 50);
   }
-  function sign(name, pos) {
-    return '<div class="sign"><div class="ln"></div>' + (name ? '(' + esc(name) + ')<br>' : '(.............................................)<br>') + esc(pos || '') + '</div>';
+  function sign(name, pos, sig) {
+    var img = /^data:image\/(png|jpeg|webp);base64,/.test(sig || '') ? '<img class="sig" alt="ลายเซ็น" src="' + esc(sig) + '">' : '';
+    return '<div class="sign"><div class="ln">' + img + '</div>' + (name ? '(' + esc(name) + ')<br>' : '(.............................................)<br>') + esc(pos || '') + '</div>';
   }
   /** หน้าตรวจสอบสาธารณะ: ?cert=เลขที่&code=รหัสตรวจสอบ */
   function verifyPage(info, certNo, code) {

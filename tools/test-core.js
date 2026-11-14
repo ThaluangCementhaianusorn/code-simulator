@@ -4,7 +4,7 @@ const src = p => fs.readFileSync(path.join(__dirname, '..', 'src', p), 'utf8');
 const { makeMemStore, sha256Hex } = require('./memstore');
 
 const ctx = vm.createContext({ console, Math, JSON, Date });
-vm.runInContext(src('Core.gs') + '\n' + src('Content.gs') + '\n' + src('Content2.gs') + '\nthis.coreApi = coreApi; this.seedSampleData_ = seedSampleData_; this.clearSampleData_ = clearSampleData_; this.getSeedCourse_ = getSeedCourse_; this.compareOutput_ = compareOutput_;', ctx);
+vm.runInContext(src('Core.gs') + '\n' + src('Content.gs') + '\n' + src('Content2.gs') + '\n' + src('Content3.gs') + '\nthis.coreApi = coreApi; this.seedSampleData_ = seedSampleData_; this.clearSampleData_ = clearSampleData_; this.getSeedCourse_ = getSeedCourse_; this.compareOutput_ = compareOutput_;', ctx);
 
 let pass = 0;
 function t(name, fn) { try { fn(); pass++; console.log('  ✓ ' + name); } catch (e) { console.error('  ✗ ' + name + '\n    ' + (e.stack || e)); process.exitCode = 1; } }
@@ -25,15 +25,16 @@ t('compareOutput_ โหมดต่าง ๆ', () => {
 });
 t('เนื้อหาตัวอย่าง: ทุกกิจกรรมผ่านการตรวจรูปแบบ', () => {
   const c = JSON.parse(JSON.stringify(ctx.getSeedCourse_()));
-  assert.strictEqual(c.units.length, 10);
+  assert.strictEqual(c.units.length, 11); // 10 ภารกิจหลัก + ภารกิจฐานข้อมูล (คะแนนพิเศษ)
+  assert.strictEqual(c.units.filter(u => u.kind === 'bonus').length, 1);
   c.units.forEach(u => { assert.deepStrictEqual(u.activities.map(a => a.type), ['knowledge', 'worksheet', 'practice', 'quiz']); u.activities.forEach(a => vm.runInContext('validateActivityData_', ctx)(a.type, a.data)); });
 });
 
 console.log('ติดตั้งและข้อมูลตัวอย่าง');
 t('seedSampleData_ ใส่เนื้อหาและนักศึกษา 10 คน', () => {
   const r = ctx.seedSampleData_(store, true);
-  assert.strictEqual(r.students, 10); assert.strictEqual(r.units, 10);
-  assert.strictEqual(store.all('Units').length, 10); assert.strictEqual(store.all('Activities').length, 40);
+  assert.strictEqual(r.students, 10); assert.strictEqual(r.units, 11);
+  assert.strictEqual(store.all('Units').length, 11); assert.strictEqual(store.all('Activities').length, 44);
   assert.ok(store.all('Certificates').length > 0, 'ควรมีเกียรติบัตรของนักศึกษาตัวอย่าง');
   assert.strictEqual(ctx.seedSampleData_(store, false).students, 0, 'รันซ้ำไม่สร้างซ้ำ');
 });
@@ -49,8 +50,8 @@ t('API นักศึกษาต้องมี token', () => throws(() => api
 let map;
 t('courseMap: ภารกิจ 1 เปิด ภารกิจ 2–5 ล็อก', () => {
   map = api('courseMap', { token: tok });
-  assert.strictEqual(map.units.length, 10);
-  assert.deepStrictEqual(map.units.map(u => u.locked), [false].concat(Array(9).fill(true)));
+  assert.strictEqual(map.units.length, 11);
+  assert.deepStrictEqual(map.units.map(u => u.locked), [false].concat(Array(9).fill(true), [false])); // ภารกิจพิเศษเปิดเสมอ
   assert.strictEqual(map.overall.percent, 0);
 });
 t('เปิดกิจกรรมในภารกิจที่ล็อกไม่ได้', () => throws(() => api('getActivity', { token: tok, activityId: 'U2-K' }), /ล็อก/));
@@ -110,7 +111,7 @@ t('ส่งแบบทดสอบ → ผ่านภารกิจ 1 → �
   assert.strictEqual(r.newCertificates[0].level, 'ดีเยี่ยม');
   throws(() => api('submitQuiz', { token: tok, sessionId: sess.sessionId, answers: ans }), /ไปแล้ว/);
   map = api('courseMap', { token: tok });
-  assert.deepStrictEqual(map.units.map(u => u.locked), [false, false].concat(Array(8).fill(true)));
+  assert.deepStrictEqual(map.units.map(u => u.locked), [false, false].concat(Array(8).fill(true), [false]));
 });
 t('แบบทดสอบ: ครั้งสุดท้ายเฉลย, เกินสิทธิ์ไม่ได้, ส่งหลังหมดเวลาได้ 0', () => {
   const s2 = api('startQuiz', { token: tok, activityId: 'U1-Q' });
@@ -153,9 +154,9 @@ t('login ครู', () => {
 t('นักศึกษาเรียก API ครูไม่ได้', () => throws(() => api('tGradebook', { token: tok }), /สิทธิ์ครู/));
 t('dashboard + gradebook', () => {
   const d = api('tDashboard', { token: tt });
-  assert.strictEqual(d.kpi.students, 10); assert.ok(d.kpi.finished >= 2); assert.strictEqual(d.units.length, 10);
+  assert.strictEqual(d.kpi.students, 10); assert.ok(d.kpi.finished >= 2); assert.strictEqual(d.units.length, 11);
   const g = api('tGradebook', { token: tt });
-  assert.strictEqual(g.rows.length, 10); assert.strictEqual(g.activities.length, 40);
+  assert.strictEqual(g.rows.length, 10); assert.strictEqual(g.activities.length, 44);
   assert.ok(g.rows.find(r => r.student.studentCode === '692010001').allPassed);
 });
 t('ปรับคะแนน: ต้องมีเหตุผล ไม่เกินคะแนนเต็ม และออกเกียรติบัตรถ้าผ่าน', () => {
@@ -190,7 +191,7 @@ t('แก้ไขกิจกรรม: ตรวจ JSON และรูปแ
 });
 t('ส่งออก → นำเข้าเนื้อหา (คะแนนเดิมยังอยู่)', () => {
   const ex = api('tExportCourse', { token: tt });
-  assert.strictEqual(ex.units.length, 10);
+  assert.strictEqual(ex.units.length, 11); assert.strictEqual(ex.units[10].kind, 'bonus');
   ex.units[0].activities = ex.units[0].activities.filter(a => a.title !== 'ฝึกเพิ่ม');
   api('tImportCourse', { token: tt, json: JSON.stringify(ex) });
   const m = api('courseMap', { token: tok });
@@ -248,7 +249,7 @@ t('ลบกิจกรรม และลบภารกิจ (ต้อง�
   api('tSaveActivity', { token: tt, activity: { unitId: u.id, type: 'knowledge', title: 'k', dataJson: '{"content":"x"}' } });
   throws(() => api('tDeleteUnit', { token: tt, unitId: u.id }), /ยืนยัน/);
   api('tDeleteUnit', { token: tt, unitId: u.id, cascade: true });
-  assert.strictEqual(api('tCourse', { token: tt }).units.length, 10);
+  assert.strictEqual(api('tCourse', { token: tt }).units.length, 11);
 });
 t('ลบนักศึกษาแบบซ่อน → กู้คืน → ลบถาวร (ต้องพิมพ์รหัสยืนยัน)', () => {
   const s = store.all('Students').find(x => x.studentCode === '692010002');
@@ -266,7 +267,106 @@ t('ลบนักศึกษาแบบซ่อน → กู้คืน �
   assert.strictEqual(store.all('Attempts').filter(a => a.studentId === s.id).length, 0);
   assert.ok(store.all('Log').some(l => l.action === 'ลบนักศึกษาถาวร'));
 });
-t('ping สำหรับทดสอบการเชื่อมต่อ', () => { const p = api('ping', {}); assert.ok(p.ok); assert.strictEqual(p.units, 10); });
+console.log('รุ่น 2.1: PIN ลายเซ็น กันทุจริต สุ่มข้อสอบ ภารกิจพิเศษ');
+t('ครูตั้ง PIN ให้นักศึกษาเอง (4–8 หลัก) ใช้ได้ทันที PIN เดิมใช้ไม่ได้', () => {
+  const s = store.all('Students').find(x => x.studentCode === '692010003');
+  throws(() => api('tSetPin', { token: tt, studentId: s.id, pin: '12' }), /4–8 หลัก/);
+  throws(() => api('tSetPin', { token: tt, studentId: s.id, pin: 'abcd' }), /4–8 หลัก/);
+  throws(() => api('tSetPin', { token: tok, studentId: s.id, pin: '4826' }), /ครู/);
+  const r = api('tSetPin', { token: tt, studentId: s.id, pin: '4826' });
+  assert.strictEqual(r.pin, '4826');
+  assert.ok(api('login', { studentCode: '692010003', pin: '4826' }).token);
+  throws(() => api('login', { studentCode: '692010003', pin: '1234' }), /ไม่ถูกต้อง/);
+});
+t('ลายเซ็นครูผู้สอน/ผู้อำนวยการ: ตรวจรูปแบบ แสดงบนเกียรติบัตร แต่ไม่ส่งไปทุกหน้า', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  throws(() => api('tSaveSettings', { token: tt, settings: { signer1Sig: 'javascript:alert(1)' } }), /PNG/);
+  throws(() => api('tSaveSettings', { token: tt, settings: { signer2Sig: 'data:image/png;base64,' + 'A'.repeat(46000) } }), /ใหญ่เกินไป/);
+  api('tSaveSettings', { token: tt, settings: { signer1Sig: png, signer2Sig: png } });
+  assert.ok(!JSON.stringify(api('info', {})).includes('base64'), 'info ไม่ควรมีภาพลายเซ็น');
+  const c = store.all('Certificates')[0];
+  const r = api('getCertificate', { certNo: c.certNo, code: c.verifyCode });
+  assert.strictEqual(r.settings.signer1Sig, png); assert.strictEqual(r.settings.signer2Sig, png);
+  api('tSaveSettings', { token: tt, settings: { signer2Sig: '' } });
+  assert.strictEqual(api('getCertificate', { certNo: c.certNo, code: c.verifyCode }).settings.signer2Sig, '');
+});
+t('ใบงาน: วางข้อความจากภายนอก → บันทึก + หักคะแนน 10% ต่อครั้ง', () => {
+  const t2 = api('login', { studentCode: '692010001', pin: '1234' }).token;
+  const d = actData('U1-P');
+  const r1 = api('reportIntegrity', { token: t2, activityId: 'U1-P', kind: 'paste', detail: 'โค้ดจากเว็บ' });
+  assert.strictEqual(r1.count, 1); assert.strictEqual(r1.penaltyPct, 10); assert.strictEqual(r1.kickOut, false);
+  api('reportIntegrity', { token: t2, activityId: 'U1-P', kind: 'paste' }); // ภายใน 2 วินาที นับครั้งเดียว
+  clock += 5000;
+  assert.strictEqual(api('reportIntegrity', { token: t2, activityId: 'U1-P', kind: 'drop' }).count, 2);
+  assert.strictEqual(api('getActivity', { token: t2, activityId: 'U1-P' }).integrity.count, 2);
+  const r = api('submitTasks', { token: t2, activityId: 'U1-P', tasks: d.tasks.map(tk => ({ code: tk.solution, outputs: tk.tests.map(x => x.expected) })) });
+  assert.strictEqual(r.integrity.count, 2);
+  assert.strictEqual(r.integrity.penalty, Math.round(r.max * 0.2 * 10) / 10);
+  assert.strictEqual(r.score, Math.round((r.max - r.integrity.penalty) * 10) / 10);
+  const me = store.all('Students').find(x => x.studentCode === '692010001');
+  const det = api('tStudentDetail', { token: tt, studentId: me.id });
+  assert.strictEqual(det.integrity.length, 2);
+  assert.ok(api('tDashboard', { token: tt }).integrity.total >= 2);
+  assert.strictEqual(api('tGradebook', { token: tt }).integrity[me.id], 2);
+  // ครูล้างการส่งงาน → ประวัติทุจริตของกิจกรรมนั้นหายด้วย
+  api('tResetActivity', { token: tt, studentId: me.id, activityId: 'U1-P' });
+  assert.strictEqual(api('getActivity', { token: t2, activityId: 'U1-P' }).integrity.count, 0);
+});
+t('แบบทดสอบ: ออกจากหน้าสอบครบ 2 ครั้ง → ให้ออกจากการสอบ ถือว่าทุจริต และหักคะแนน', () => {
+  clock += 60000;
+  const t2 = api('login', { studentCode: '692010001', pin: '1234' }).token;
+  const q = api('startQuiz', { token: t2, activityId: 'U1-Q' });
+  assert.strictEqual(q.maxStrikes, 2); assert.strictEqual(q.strikes, 0);
+  throws(() => api('reportIntegrity', { token: t2, activityId: 'U1-Q', kind: 'leave' }), /รอบการสอบ/);
+  const a = api('reportIntegrity', { token: t2, activityId: 'U1-Q', sessionId: q.sessionId, kind: 'leave' });
+  assert.strictEqual(a.kickOut, false);
+  clock += 3000;
+  const b = api('reportIntegrity', { token: t2, activityId: 'U1-Q', sessionId: q.sessionId, kind: 'copy' });
+  assert.strictEqual(b.count, 2); assert.strictEqual(b.kickOut, true);
+  const qd = actData('U1-Q'), ans = {}; qd.questions.forEach(x => { ans[x.id] = x.type === 'mc' ? x.answer : String([].concat(x.answer)[0]); });
+  const r = api('submitQuiz', { token: t2, sessionId: q.sessionId, answers: ans, forced: true });
+  assert.strictEqual(r.integrity.cheat, true); assert.strictEqual(r.integrity.count, 2);
+  assert.strictEqual(r.score, Math.round((r.max - r.max * 0.2) * 10) / 10);
+  assert.ok(store.all('Log').some(l => l.action === 'ทุจริตในการสอบ'));
+});
+t('แบบทดสอบสุ่มจากคลัง (drawCount): ได้ข้อไม่ซ้ำกัน ตรวจเฉพาะข้อที่ได้ และคะแนนเต็มคงที่', () => {
+  const u1q = store.all('Activities').find(a => a.id === 'U1-Q');
+  const dd = JSON.parse(u1q.dataJson); dd.drawCount = 3; dd.maxAttempts = 0;
+  api('tSaveActivity', { token: tt, activity: { id: u1q.id, unitId: u1q.unitId, order: u1q.order, type: 'quiz', title: u1q.title, status: 'active', dataJson: JSON.stringify(dd) } });
+  const t2 = api('login', { studentCode: '692010001', pin: '1234' }).token;
+  const info = api('getActivity', { token: t2, activityId: 'U1-Q' });
+  assert.strictEqual(info.questionCount, 3); assert.strictEqual(info.bankSize, 6); assert.strictEqual(info.max, 3);
+  const q = api('startQuiz', { token: t2, activityId: 'U1-Q' });
+  assert.strictEqual(q.questions.length, 3);
+  const ans = {}; dd.questions.forEach(x => { ans[x.id] = x.type === 'mc' ? x.answer : x.type === 'tf' ? String(x.answer) : String([].concat(x.answer)[0]); });
+  const r = api('submitQuiz', { token: t2, sessionId: q.sessionId, answers: ans });
+  assert.strictEqual(r.results.length, 3); assert.strictEqual(r.max, 3); assert.strictEqual(r.score, 3);
+  dd.drawCount = 0; dd.maxAttempts = 2;
+  api('tSaveActivity', { token: tt, activity: { id: u1q.id, unitId: u1q.unitId, order: u1q.order, type: 'quiz', title: u1q.title, status: 'active', dataJson: JSON.stringify(dd) } });
+});
+t('ตั้งค่ากันทุจริต: ตรวจค่า', () => {
+  throws(() => api('tSaveSettings', { token: tt, settings: { quizMaxStrikes: '0' } }), /1–10/);
+  throws(() => api('tSaveSettings', { token: tt, settings: { integrityPenalty: '150' } }), /0–100/);
+  api('tSaveSettings', { token: tt, settings: { quizMaxStrikes: '3', integrityPenalty: '5' } });
+  assert.strictEqual(api('info', {}).quizMaxStrikes, 3);
+  api('tSaveSettings', { token: tt, settings: { quizMaxStrikes: '2', integrityPenalty: '10' } });
+});
+t('ภารกิจพิเศษ: ไม่นับรวมคะแนนหลัก และได้เกียรติบัตร "ภารกิจพิเศษ"', () => {
+  const t2 = api('login', { studentCode: '692010001', pin: '1234' }).token;
+  const before = api('courseMap', { token: t2 });
+  const bonus = before.units.find(u => u.bonus);
+  assert.ok(!bonus.locked);
+  seed.units.find(u => u.id === 'U11').activities.forEach(a => {
+    if (a.type === 'knowledge') api('markRead', { token: t2, activityId: a.id });
+    else if (a.type === 'quiz') { const q = api('startQuiz', { token: t2, activityId: a.id }); const ans = {}; a.data.questions.forEach(x => { ans[x.id] = x.answer; }); api('submitQuiz', { token: t2, sessionId: q.sessionId, answers: ans }); }
+    else api('submitTasks', { token: t2, activityId: a.id, tasks: a.data.tasks.map(tk => ({ code: tk.solution, outputs: tk.tests.map(x => x.expected) })) });
+  });
+  const after = api('courseMap', { token: t2 });
+  assert.strictEqual(after.bonus.earned, 60); assert.strictEqual(after.bonus.max, 60);
+  assert.strictEqual(after.overall.earned, before.overall.earned, 'คะแนนหลักต้องไม่เปลี่ยน');
+  assert.ok(after.certificates.some(c => c.unitId === 'U11' && /^ภารกิจพิเศษ/.test(c.title)));
+});
+t('ping สำหรับทดสอบการเชื่อมต่อ', () => { const p = api('ping', {}); assert.ok(p.ok); assert.strictEqual(p.units, 11); });
 
 t('ล้างข้อมูลตัวอย่าง', () => {
   const n = ctx.clearSampleData_(store);

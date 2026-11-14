@@ -46,8 +46,9 @@ var StudentApp = (function () {
   }
   function render() {
     window.scrollTo(0, 0);
-    view.classList.toggle('wide', cur.name === 'act' || cur.name === 'show');
+    view.className = 'wrap' + (['act', 'show', 'home', 'scores', 'unit', 'certs', 'gallery'].indexOf(cur.name) >= 0 ? ' wide' : '');
     if (window.__quizTimer) { clearInterval(window.__quizTimer); window.__quizTimer = null; }
+    if (window.__quizCleanup) window.__quizCleanup();
     view.innerHTML = '<div class="empty"><span class="spin" style="display:inline-block;width:28px;height:28px;border:3px solid var(--primary);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></span></div>';
     var f = { home: vHome, unit: vUnit, act: vActivity, scores: vScores, certs: vCerts, cert: vCert, gallery: vGallery, show: vShow }[cur.name] || vHome;
     Promise.resolve().then(function () { return f(cur.params); }).catch(function (e) {
@@ -74,11 +75,12 @@ var StudentApp = (function () {
   }
   function outlineCard(info) {
     var c = el('div', { class: 'card' });
-    c.innerHTML = '<h2>🧭 สร้างเว็บแอปพลิเคชัน ต้องเรียนอะไรบ้าง</h2><p class="small muted">10 ภารกิจ แต่ละภารกิจมี 📖 ใบความรู้ → 📝 ใบงาน → 💻 แบบฝึกปฏิบัติ → ✅ แบบทดสอบ ผ่านแล้วได้เกียรติบัตรทันที</p>';
+    var main = (info.outline || []).filter(function (u) { return !u.bonus; }).length;
+    c.innerHTML = '<h2>🧭 สร้างเว็บแอปพลิเคชัน ต้องเรียนอะไรบ้าง</h2><p class="small muted">' + main + ' ภารกิจหลัก' + (main < (info.outline || []).length ? ' + ภารกิจพิเศษ ⭐' : '') + ' แต่ละภารกิจมี 📖 ใบความรู้ → 📝 ใบงาน → 💻 แบบฝึกปฏิบัติ → ✅ แบบทดสอบ ผ่านแล้วได้เกียรติบัตรทันที</p>';
     var ol = el('div', { class: 'outline' });
     (info.outline || []).forEach(function (u) {
-      var d = el('div', { class: 'ol-item' });
-      d.innerHTML = '<span class="ol-no">' + u.no + '</span><span class="ol-ic">' + esc(u.icon) + '</span><div><b>' + esc(u.title) + '</b><div class="small muted">' + esc(u.summary || '') + '</div></div>';
+      var d = el('div', { class: 'ol-item' + (u.bonus ? ' bonus' : '') });
+      d.innerHTML = '<span class="ol-no">' + (u.bonus ? '⭐' : u.no) + '</span><span class="ol-ic">' + esc(u.icon) + '</span><div><b>' + esc(u.title) + '</b>' + (u.bonus ? ' <span class="chip wait">คะแนนพิเศษ</span>' : '') + '<div class="small muted">' + esc(u.summary || '') + '</div></div>';
       ol.appendChild(d);
     });
     c.appendChild(ol);
@@ -86,11 +88,20 @@ var StudentApp = (function () {
   }
   function showLogin() {
     st.me = null; cur = null; setNav(null);
+    if (window.__quizCleanup) window.__quizCleanup();
     setTop(st.info.courseName, st.info.schoolName);
-    view.innerHTML = '';
-    view.appendChild(courseHero(st.info));
-    var cols = el('div', { class: 'land-cols' });
-    var c = el('div', { class: 'card login-card' });
+    view.innerHTML = ''; view.className = 'wrap land';
+    var info = st.info, S = info.stats || {};
+    // ---- ส่วนหัวเต็มจอ: ข้อมูลรายวิชา + ช่องเข้าสู่ระบบ ----
+    var hero = el('section', { class: 'land-full' });
+    var left = el('div', { class: 'lf-text' });
+    left.innerHTML = '<div class="land-tags">' + (info.courseCode ? '<span>รหัสวิชา ' + esc(info.courseCode) + '</span>' : '') + (info.courseCredit ? '<span>' + esc(creditText(info.courseCredit)) + '</span>' : '') + '<span>ภาคเรียน ' + esc(info.semester) + '/' + esc(info.academicYear) + '</span></div>' +
+      '<h1>' + esc(info.courseName) + '</h1><p>' + esc(info.courseDescription || '') + '</p>' +
+      '<div class="land-stack"><span>HTML5</span><span>CSS3</span><span>JavaScript</span><span>Vue 3</span><span>Bootstrap 5</span><span>REST API</span><span>Google Sheets DB</span><span>Deploy</span></div>' +
+      '<div class="lf-stats">' + [[S.units, 'ภารกิจ'], [S.activities, 'กิจกรรม'], [S.tasks, 'โจทย์ฝึกเขียนโค้ด'], [S.students, 'ผู้เรียน'], [S.certificates, 'เกียรติบัตรที่ออก']].filter(function (x) { return x[0] !== undefined; })
+        .map(function (x) { return '<div><b>' + fmt(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>';
+    hero.appendChild(left);
+    var c = el('div', { class: 'card login-card glass' });
     c.innerHTML = '<div class="center"><div style="font-size:2.6rem">🧑‍💻</div><h2 style="margin:.2em 0">เข้าสู่ห้องเรียน</h2><p class="muted small">เขียนโค้ด ดูผลบนหน้าจอมือถือทันที ทำภารกิจให้ครบเพื่อรับเกียรติบัตร</p></div>';
     var f = el('form');
     f.innerHTML = '<label class="f" for="lc">รหัสนักศึกษา</label><input class="in" id="lc" inputmode="numeric" autocomplete="username" required>' +
@@ -112,8 +123,19 @@ var StudentApp = (function () {
     var gb = el('button', { class: 'btn block', type: 'button', style: 'margin-top:10px' }, '📱 ดูระบบตัวอย่าง 10 ระบบ (เปิดดูได้ทันที)');
     gb.onclick = function () { go('gallery', {}, true); };
     c.appendChild(gb);
-    cols.appendChild(c); cols.appendChild(outlineCard(st.info));
-    view.appendChild(cols);
+    hero.appendChild(c);
+    view.appendChild(hero);
+    // ---- จุดเด่นของห้องเรียน ----
+    var feats = el('section', { class: 'land-feats' });
+    [['📱', 'ตัวจำลองเว็บ + มือถือ', 'พิมพ์โค้ดแล้วเห็นผลทันทีบนหน้าจอมือถือจำลอง พร้อม Console ภาษาไทย'],
+      ['🗄️', 'ฐานข้อมูล Google Sheets', 'ฝึก CRUD, Transaction และ LockService กับชีตหลายแท็บจำลอง'],
+      ['✅', 'ตรวจงานอัตโนมัติ', 'ชุดตรวจทั้งแบบเปิดและแบบซ่อน ส่งแล้วรู้คะแนนทันที'],
+      ['🛡️', 'ระบบกันทุจริต', 'บล็อกการวางข้อความจากภายนอก สุ่มข้อสอบ และแจ้งเตือนเมื่อออกจากหน้าสอบ'],
+      ['🏆', 'เกียรติบัตรทุกภารกิจ', 'ผ่านเกณฑ์แล้วได้เกียรติบัตรพร้อมลายเซ็นและ QR ตรวจสอบ']].forEach(function (f) {
+      var d = el('div', { class: 'feat' }); d.innerHTML = '<span class="fi">' + f[0] + '</span><b>' + f[1] + '</b><p>' + f[2] + '</p>'; feats.appendChild(d);
+    });
+    view.appendChild(feats);
+    view.appendChild(outlineCard(st.info));
   }
   function demoHint() {
     var d = el('div', { class: 'card flat', style: 'margin:16px 0 0;background:var(--wait-soft)' });
@@ -132,12 +154,40 @@ var StudentApp = (function () {
     return loadMap().then(function (m) {
       setTop(m.settings.courseName, m.settings.schoolName); setNav('home');
       view.innerHTML = '';
-      var passed = m.units.filter(function (u) { return u.passed; }).length;
-      var hero = el('div', { class: 'card hero hero-grad' });
+      var mainU = m.units.filter(function (u) { return !u.bonus; }), bonusU = m.units.filter(function (u) { return u.bonus; });
+      var passed = mainU.filter(function (u) { return u.passed; }).length;
+      var acts = [].concat.apply([], m.units.map(function (u) { return u.activities; }));
+      var doneActs = acts.filter(function (a) { return a.done; }).length;
+      var hero = el('div', { class: 'card hero hero-grad dash-hero' });
       hero.innerHTML = '<div class="ring" style="--p:' + m.overall.percent + '"><span>' + Math.round(m.overall.percent) + '%</span></div>' +
         '<div class="grow"><div class="small" style="opacity:.85">' + esc((st.info.courseCode ? st.info.courseCode + ' · ' : '') + m.settings.courseName) + '</div><h1 style="margin:0">สวัสดี ' + esc(m.student.firstName) + ' 👋</h1>' +
-        '<div class="small">ผ่านแล้ว <b>' + passed + '/' + m.units.length + '</b> ภารกิจ · เกียรติบัตร <b>' + m.certificates.length + '</b> ใบ</div></div>';
+        '<div class="small">ผ่านแล้ว <b>' + passed + '/' + mainU.length + '</b> ภารกิจ · เกียรติบัตร <b>' + m.certificates.length + '</b> ใบ' + (m.bonus && m.bonus.max ? ' · คะแนนพิเศษ <b>' + fmt(m.bonus.earned) + '/' + fmt(m.bonus.max) + '</b>' : '') + '</div></div>';
       view.appendChild(hero);
+      // ---- แดชบอร์ด ----
+      var week = (m.activity || []).slice(-7).reduce(function (s, d) { return s + d.n; }, 0);
+      Charts.kpis(view, [
+        { icon: '🎯', label: 'คะแนนรวม', value: fmt(m.overall.earned) + '/' + fmt(m.overall.max), sub: fmt(m.overall.percent) + '% ของทุกภารกิจ' },
+        { icon: '✅', label: 'กิจกรรมที่ทำแล้ว', value: doneActs + '/' + acts.length, sub: 'ใบความรู้ ใบงาน แบบฝึก แบบทดสอบ' },
+        { icon: '🏆', label: 'เกียรติบัตร', value: String(m.certificates.length), sub: 'ใบ' },
+        { icon: '🔥', label: 'ส่งงาน 7 วันล่าสุด', value: String(week), sub: 'ครั้ง' }
+      ]);
+      var dg = el('div', { class: 'dash-grid' });
+      var c1 = Charts.card('ความก้าวหน้ารายภารกิจ', 'เส้นประ = เกณฑ์ผ่าน ' + m.settings.passPercent + '% · แตะแถวเพื่อเปิดภารกิจ', 'span2');
+      Charts.hbars(c1, m.units.map(function (u) {
+        return { label: (u.bonus ? '⭐ ' : u.no + '. ') + u.title, value: u.percent, ok: u.passed, muted: u.locked, text: u.locked ? '🔒' : fmt(u.percent) + '%',
+          tip: '<b>' + esc(u.title) + '</b><br>' + fmt(u.earned) + '/' + fmt(u.max) + ' คะแนน · ทำแล้ว ' + u.doneCount + '/' + u.total + ' กิจกรรม' + (u.passed ? '<br>✓ ผ่าน ' + esc(u.level.name) : ''),
+          onClick: u.locked ? null : function () { go('unit', { id: u.id }); } };
+      }), { target: m.settings.passPercent, unit: '%' });
+      dg.appendChild(c1);
+      var c2 = Charts.card('สถานะกิจกรรม', 'ทั้งหมด ' + acts.length + ' กิจกรรม');
+      var full = acts.filter(function (a) { return a.done && (!a.max || a.best >= a.max); }).length;
+      Charts.donut(c2, [{ label: 'ได้คะแนนเต็ม/อ่านแล้ว', value: full, cls: 'ok' }, { label: 'ทำแล้วแต่ยังไม่เต็ม', value: doneActs - full, cls: 'wait' }, { label: 'ยังไม่ทำ', value: acts.length - doneActs, cls: 'muted' }],
+        { center: Math.round(acts.length ? doneActs / acts.length * 100 : 0) + '%', sub: 'ทำแล้ว', aria: 'สถานะกิจกรรม' });
+      dg.appendChild(c2);
+      var c3 = Charts.card('การส่งงาน 14 วันล่าสุด', 'จำนวนครั้งที่ส่งงานต่อวัน', 'span3');
+      Charts.columns(c3, (m.activity || []).map(function (d) { return { label: Charts.dayLabel(d.d), title: thDate(d.d, true), value: d.n }; }), { unit: 'ครั้ง', height: 120, xName: 'วันที่', yName: 'ส่งงาน (ครั้ง)' });
+      dg.appendChild(c3);
+      view.appendChild(dg);
       var sc = el('button', { class: 'card showcase-cta', type: 'button' });
       sc.innerHTML = '<span class="i">📱</span><span class="grow"><b>ระบบตัวอย่าง 10 ระบบ</b><br><span class="small muted">เปิดโค้ดจริง แก้ แล้วดูผลบนหน้าจอมือถือ</span></span><span>›</span>';
       sc.onclick = function () { go('gallery', {}, true); };
@@ -149,16 +199,21 @@ var StudentApp = (function () {
       } else if (m.overall.allPassed) {
         var done = el('div', { class: 'card center', style: 'background:var(--ok-soft)' }); done.innerHTML = '<div style="font-size:2.4rem">🎓</div><b>ยินดีด้วย! ผ่านครบทุกภารกิจแล้ว</b><br><span class="small">ดูเกียรติบัตรสำเร็จหลักสูตรได้ที่แท็บ เกียรติบัตร</span>'; view.appendChild(done);
       }
-      view.appendChild(el('h2', {}, 'เส้นทางภารกิจ'));
-      m.units.forEach(function (u) {
-        var c = el('div', { class: 'card mission' + (u.locked ? ' locked' : '') + (u.passed ? ' passed' : ''), role: 'button', tabindex: '0' });
+      function missionCard(u, host) {
+        var c = el('div', { class: 'card mission' + (u.locked ? ' locked' : '') + (u.passed ? ' passed' : '') + (u.bonus ? ' bonus' : ''), role: 'button', tabindex: '0' });
         var chip = u.locked ? '<span class="chip">🔒 ผ่านภารกิจที่ ' + (u.no - 1) + ' ก่อน</span>' : u.passed ? '<span class="chip ok">✓ ผ่าน · ' + esc(u.level.name) + '</span>' : u.doneCount ? '<span class="chip wait">กำลังทำ ' + u.doneCount + '/' + u.total + '</span>' : '<span class="chip pri">ยังไม่เริ่ม</span>';
-        c.innerHTML = '<div class="badge">' + (u.locked ? '🔒' : esc(u.icon || '🎯')) + '</div><div><div class="no">ภารกิจที่ ' + u.no + '</div><h3>' + esc(u.title) + (u.passed ? ' <span class="medal">' + LEVEL_MEDAL[u.level.key] + '</span>' : '') + '</h3>' +
+        c.innerHTML = '<div class="badge">' + (u.locked ? '🔒' : esc(u.icon || '🎯')) + '</div><div><div class="no">' + (u.bonus ? '⭐ ภารกิจพิเศษ (คะแนนเก็บเพิ่ม)' : 'ภารกิจที่ ' + u.no) + '</div><h3>' + esc(u.title) + (u.passed ? ' <span class="medal">' + LEVEL_MEDAL[u.level.key] + '</span>' : '') + '</h3>' +
           '<div class="small muted">' + esc(u.mission) + '</div><div class="row" style="margin-top:6px"><div class="bar grow ' + (u.passed ? 'ok' : '') + '"><i style="width:' + u.percent + '%"></i></div><span class="small">' + Math.round(u.percent) + '%</span></div><div style="margin-top:6px">' + chip + '</div></div>';
         c.onclick = function () { if (u.locked) toast('ต้องผ่านภารกิจที่ ' + (u.no - 1) + ' ก่อน (ทำครบทุกกิจกรรม และได้ ' + u.need + '% ขึ้นไป)'); else go('unit', { id: u.id }); };
         c.onkeydown = function (e) { if (e.key === 'Enter') c.onclick(); };
-        view.appendChild(c);
-      });
+        host.appendChild(c);
+      }
+      view.appendChild(el('h2', {}, 'เส้นทางภารกิจ'));
+      var mg = el('div', { class: 'mission-grid' }); mainU.forEach(function (u) { missionCard(u, mg); }); view.appendChild(mg);
+      if (bonusU.length) {
+        view.appendChild(el('h2', {}, '⭐ ภารกิจพิเศษ (คะแนนเก็บเพิ่ม แยกจากคะแนนหลัก)'));
+        var bg = el('div', { class: 'mission-grid' }); bonusU.forEach(function (u) { missionCard(u, bg); }); view.appendChild(bg);
+      }
     });
   }
 
@@ -207,7 +262,7 @@ var StudentApp = (function () {
     return loadMap().then(function (m) {
       var u = m.units.filter(function (x) { return x.id === p.id; })[0];
       if (!u) throw new Error('ไม่พบภารกิจ');
-      setTop('ภารกิจที่ ' + u.no, u.title, true); setNav('home');
+      setTop(u.bonus ? '⭐ ภารกิจพิเศษ' : 'ภารกิจที่ ' + u.no, u.title, true); setNav('home');
       view.innerHTML = '';
       var h = el('div', { class: 'card' });
       h.innerHTML = '<div class="row"><div style="font-size:2.4rem">' + esc(u.icon) + '</div><div class="grow"><h1 style="margin:0">' + esc(u.title) + '</h1><div class="muted small">' + esc(u.summary) + '</div></div></div>' +
@@ -221,6 +276,15 @@ var StudentApp = (function () {
         cb.innerHTML = '<span style="font-size:2rem">' + LEVEL_MEDAL[u.level.key] + '</span><div class="grow"><b>ได้รับเกียรติบัตรแล้ว ระดับ' + esc(u.level.name) + '</b><div class="small">แตะเพื่อดูและพิมพ์เกียรติบัตร</div></div><span>›</span>';
         if (cert) cb.onclick = function () { go('cert', { certNo: cert.certNo }); };
         view.appendChild(cb);
+      }
+      var scored = u.activities.filter(function (a) { return a.max > 0; });
+      if (scored.length) {
+        var ch = Charts.card('คะแนนรายกิจกรรม', 'ร้อยละของคะแนนเต็ม (คะแนนดีที่สุด)');
+        Charts.hbars(ch, scored.map(function (a) {
+          return { label: TYPE_ICON[a.type] + ' ' + a.typeName, value: a.done ? (a.best || 0) / a.max * 100 : 0, ok: a.done && a.best >= a.max, text: a.done ? fmt(a.best) + '/' + fmt(a.max) : 'ยังไม่ทำ',
+            tip: '<b>' + esc(a.title) + '</b><br>' + (a.done ? fmt(a.best) + '/' + fmt(a.max) + ' คะแนน · ส่ง ' + a.attempts + ' ครั้ง' : 'ยังไม่ทำ'), onClick: function () { go('act', { id: a.id }); } };
+        }), { target: u.need, unit: '%' });
+        view.appendChild(ch);
       }
       var list = el('div', { class: 'acts' });
       u.activities.forEach(function (a, i) {
@@ -239,7 +303,7 @@ var StudentApp = (function () {
   /* ---------------- กิจกรรม ---------------- */
   function vActivity(p) {
     return Api.call('getActivity', { activityId: p.id }).then(function (a) {
-      setTop(a.typeName, 'ภารกิจที่ ' + a.unitNo + ' · ' + a.unitTitle, true); setNav(null);
+      setTop(a.typeName, (a.unitBonus ? '⭐ ภารกิจพิเศษ' : 'ภารกิจที่ ' + a.unitNo) + ' · ' + a.unitTitle, true); setNav(null);
       view.innerHTML = '';
       var h = el('div', { class: 'card' });
       h.innerHTML = '<div class="row"><span style="font-size:1.8rem">' + TYPE_ICON[a.type] + '</span><div class="grow"><h1 style="margin:0">' + esc(a.title) + '</h1>' +
@@ -253,7 +317,7 @@ var StudentApp = (function () {
 
   function codeBlockRunner(lang, code, flags) {
     if (/norun/.test(flags)) return null;
-    if (lang === 'html' || lang === 'js' || lang === 'vue') { var wh = el('div'); WebSim(wh, { code: code, starter: code, lang: lang === 'js' ? 'js' : 'html' }); return wh; }
+    if (lang === 'html' || lang === 'js' || lang === 'vue' || lang === 'gas') { var wh = el('div'); WebSim(wh, { code: code, starter: code, lang: lang === 'vue' ? 'html' : lang }); return wh; }
     if (lang !== 'python') return null;
     var host = el('div');
     var needsInput = /input\(/.test(code);
@@ -281,7 +345,43 @@ var StudentApp = (function () {
 
   /* ----- ใบงาน / แบบฝึก ----- */
   function draftKey(a, i) { return 'cs_draft_' + (st.me ? st.me.id : '') + '_' + a.id + '_' + i; }
+  /** แถบกฎความซื่อสัตย์ + จำนวนครั้งที่ถูกบันทึก */
+  function integrityBanner(a) {
+    var b = el('div', { class: 'card flat integrity' });
+    function draw() {
+      var n = a.integrity.count, pct = a.integrity.penaltyPct;
+      b.classList.toggle('hit', n > 0);
+      b.innerHTML = '<span class="ib-ic">' + (n ? '🚨' : '🛡️') + '</span><div class="grow"><b>พื้นที่ทำงานนี้ห้ามวางข้อความจากที่อื่น</b><div class="small">พิมพ์โค้ดด้วยตัวเอง (คัดลอก-วางภายในงานของตัวเองได้) ' +
+        'ถ้าวางข้อความจากภายนอก ระบบจะบล็อก บันทึกให้ครูเห็น และ<b>หักคะแนน ' + pct + '% ของคะแนนเต็มต่อครั้ง</b></div></div>' +
+        (n ? '<span class="chip bad">บันทึกแล้ว ' + n + ' ครั้ง · หัก ' + Math.min(100, n * pct) + '%</span>' : '<span class="chip ok">ยังไม่มีการละเมิด</span>');
+    }
+    draw(); b.redraw = draw;
+    return b;
+  }
+  /** สร้างฟังก์ชันที่ตัวแก้ไขเรียกเมื่อพบการวาง/ลากข้อความจากภายนอก */
+  function pasteGuard(a, banner) {
+    var last = 0;
+    return function (kind, text) {
+      var now = Date.now(); if (now - last < 1500) return; last = now;
+      Api.call('reportIntegrity', { activityId: a.id, kind: kind, detail: String(text || '').replace(/\s+/g, ' ').slice(0, 120) }).then(function (r) {
+        a.integrity.count = r.count; banner.redraw();
+        integrityAlert('🚫 ห้ามคัดลอกข้อความจากที่อื่นมาวาง', 'ระบบบล็อกการ' + esc(r.kindName) + ' และบันทึกเป็นครั้งที่ <b>' + r.count + '</b><br>คะแนนกิจกรรมนี้จะถูก<b>หัก ' + r.penaltyPct + '% ต่อครั้ง</b> (ตอนนี้รวม ' + Math.min(100, r.count * r.penaltyPct) + '%) เมื่อส่งงาน<br><span class="small muted">ครูผู้สอนเห็นประวัตินี้ในสมุดคะแนน</span>');
+      }).catch(function (e) { toast(e.message, 'bad'); });
+    };
+  }
+  function integrityAlert(title, html, then) {
+    modal(function (m, close) {
+      m.classList.add('alarm');
+      m.appendChild(el('h2', {}, title));
+      var p = el('p'); p.innerHTML = html; m.appendChild(p);
+      var b = el('button', { class: 'btn primary block' }, 'รับทราบ'); b.onclick = close; m.appendChild(b);
+      setTimeout(function () { b.focus(); }, 30);
+    }, { sticky: true, onClose: then });
+  }
+
   function vTasks(a) {
+    var banner = integrityBanner(a); view.appendChild(banner);
+    var guard = pasteGuard(a, banner);
     if (a.intro) { var ic = el('div', { class: 'card flat', style: 'background:var(--primary-soft)' }); ic.appendChild(mdRender(a.intro)); view.appendChild(ic); }
     var sims = [];
     a.tasks.forEach(function (t, i) {
@@ -310,8 +410,8 @@ var StudentApp = (function () {
         { label: '🧪 ตรวจกับตัวอย่าง', onClick: function (btn) { btn.dataset.busy = 'กำลังตรวจ…'; withBusy(btn, function () { return checkVisible(sim, t, checkOut); }).catch(function () {}); } },
         { label: '💡 คำใบ้ (' + (t.hintCount - t.hints.length) + ')', onClick: function (btn) { askHint(a, i, t, hintBox, btn); } }
       ];
-      var sim = isWeb(t) ? WebSim(c, { code: code, starter: t.starterCode, lang: t.lang === 'js' ? 'js' : 'html', onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600), extraTools: tools }) : Sim(c, {
-        code: code, starter: t.starterCode, showStdin: !!t.sampleInput || /input\(/.test(t.starterCode), stdin: t.sampleInput || (vis[0] ? vis[0].input : ''),
+      var sim = isWeb(t) ? WebSim(c, { code: code, starter: t.starterCode, lang: webLang(t), sheets: t.sheets, call: t.call, guard: guard, onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600), extraTools: tools }) : Sim(c, {
+        code: code, starter: t.starterCode, guard: guard, showStdin: !!t.sampleInput || /input\(/.test(t.starterCode), stdin: t.sampleInput || (vis[0] ? vis[0].input : ''),
         onChange: debounce(function (v) { store(draftKey(a, i), v); }, 600),
         extraTools: [
           { label: '🧪 ตรวจกับตัวอย่าง', onClick: function (btn) { btn.dataset.busy = 'กำลังตรวจ…'; withBusy(btn, function () { return checkVisible(sim, t, checkOut); }).catch(function () {}); } },
@@ -338,9 +438,10 @@ var StudentApp = (function () {
   }
 
   function isWeb(t) { return t.lang !== 'python'; }
+  function webLang(t) { return t.lang === 'js' || t.lang === 'gas' ? t.lang : 'html'; }
   /** รันชุดตรวจตามภาษาของโจทย์ */
   function runTests(t, code, list) {
-    return isWeb(t) ? WebRunner.tests(code, list, { lang: t.lang === 'js' ? 'js' : 'html' }) : PyRunner.tests(code, list.map(function (x) { return x.input; }));
+    return isWeb(t) ? WebRunner.tests(code, list, { lang: webLang(t), sheets: t.sheets }) : PyRunner.tests(code, list.map(function (x) { return x.input; }));
   }
 
   function checkVisible(sim, t, out) {
@@ -401,6 +502,7 @@ var StudentApp = (function () {
       m.appendChild(el('div', { class: 'center', style: 'font-size:3rem' }, full ? '🎉' : r.score > 0 ? '👍' : '💪'));
       var h = el('h2', { class: 'center' }); h.innerHTML = 'ได้ ' + fmt(r.score) + ' / ' + fmt(r.max) + ' คะแนน'; m.appendChild(h);
       m.appendChild(el('p', { class: 'center muted small' }, 'ส่งครั้งที่ ' + r.attemptNo + ' · คะแนนที่ดีที่สุด ' + fmt(r.best)));
+      if (r.integrity && r.integrity.penalty) { var ip = el('div', { class: 'card flat integrity hit' }); ip.innerHTML = '<span class="ib-ic">🚨</span><div class="grow small">หักคะแนน <b>' + fmt(r.integrity.penalty) + '</b> คะแนน เพราะพยายามวางข้อความจากภายนอก ' + r.integrity.count + ' ครั้ง</div>'; m.appendChild(ip); }
       r.tasks.forEach(function (t, i) {
         var d = el('div', { class: 'card flat' });
         var hh = '<b>' + esc(a.tasks[i].title) + '</b> — ' + fmt(t.earned) + '/' + fmt(t.max) + (t.penalty ? ' <span class="chip wait">หักคำใบ้ ' + fmt(t.penalty) + '</span>' : '') + '<div style="margin-top:6px">';
@@ -429,6 +531,9 @@ var StudentApp = (function () {
     var c = el('div', { class: 'card' });
     if (a.intro) c.appendChild(mdRender(a.intro));
     var left = a.maxAttempts ? a.maxAttempts - a.attemptsUsed : null;
+    var rules = el('div', { class: 'card flat integrity' });
+    rules.innerHTML = '<span class="ib-ic">🛡️</span><div class="grow small"><b>กติกาการสอบ</b><br>• ข้อสอบ' + (a.bankSize > a.questionCount ? 'สุ่ม ' + a.questionCount + ' ข้อจากคลัง ' + a.bankSize + ' ข้อ' : 'สุ่มลำดับข้อ') + 'และสลับตัวเลือก ทุกคนได้ชุดไม่เหมือนกัน<br>• ห้ามคัดลอกข้อสอบ ห้ามสลับแท็บหรือออกจากหน้านี้ไปค้นหาข้อมูล ระบบตรวจจับและหักคะแนน ' + a.integrity.penaltyPct + '% ต่อครั้ง<br>• ครบ <b>' + a.integrity.maxStrikes + ' ครั้ง</b> ระบบจะ<b>ส่งคำตอบและให้ออกจากการสอบทันที</b> พร้อมแจ้งครูว่าทุจริต</div>';
+    c.appendChild(rules);
     var info = el('div'); info.innerHTML = '<table class="tests"><tr><th>จำนวนข้อ</th><td>' + a.questionCount + ' ข้อ (' + fmt(a.max) + ' คะแนน)</td></tr><tr><th>เวลา</th><td>' + (a.timeLimitMin ? a.timeLimitMin + ' นาที' : 'ไม่จำกัด') + '</td></tr><tr><th>จำนวนครั้ง</th><td>' + (a.maxAttempts ? 'ทำแล้ว ' + a.attemptsUsed + '/' + a.maxAttempts : 'ไม่จำกัด') + '</td></tr><tr><th>คะแนนดีที่สุด</th><td>' + (a.done ? fmt(a.best) + '/' + fmt(a.max) : '-') + '</td></tr></table>';
     c.appendChild(info);
     var b = el('button', { class: 'btn primary block', style: 'margin-top:10px' }, a.activeSession ? '▶ ทำแบบทดสอบต่อ' : '▶ เริ่มทำแบบทดสอบ'); b.dataset.busy = 'กำลังเตรียมข้อสอบ…';
@@ -450,6 +555,7 @@ var StudentApp = (function () {
     var bar = el('div', { class: 'timer' });
     var tLeft = el('b'), prog = el('span', { class: 'small grow' });
     bar.appendChild(el('span', {}, '⏱')); bar.appendChild(tLeft); bar.appendChild(prog);
+    var strikeChip = el('span', { class: 'chip ok', title: 'จำนวนครั้งที่ระบบตรวจพบการทุจริต' }); bar.appendChild(strikeChip);
     var sendTop = el('button', { class: 'btn sm primary' }, 'ส่งคำตอบ'); bar.appendChild(sendTop);
     view.appendChild(bar);
     function save() { store(key, ans); updateProg(); }
@@ -481,16 +587,58 @@ var StudentApp = (function () {
     foot.appendChild(sb); view.appendChild(foot);
     updateProg();
     var submitted = false;
-    function submit(auto) {
+    function submit(auto, forced) {
       if (submitted) return Promise.resolve();
       Object.keys(textInputs).forEach(function (id) { ans[id] = textInputs[id].value; });
       store(key, ans);
       submitted = true;
       if (window.__quizTimer) { clearInterval(window.__quizTimer); window.__quizTimer = null; }
       return withBusy(sb, function () {
-        return Api.call('submitQuiz', { sessionId: s.sessionId, answers: ans }).then(function (r) { store(key, null); showQuizResult(a, s, r, ans); });
+        return Api.call('submitQuiz', { sessionId: s.sessionId, answers: ans, forced: !!forced }).then(function (r) {
+          store(key, null); cleanup(); showQuizResult(a, s, r, ans);
+          if (forced || (r.integrity && r.integrity.cheat)) integrityAlert('⛔ ถูกให้ออกจากการสอบ', 'ระบบตรวจพบพฤติกรรมทุจริตครบ <b>' + s.maxStrikes + ' ครั้ง</b> (คัดลอกข้อสอบ / ออกจากหน้าสอบไปค้นหาข้อมูล) จึงส่งคำตอบให้อัตโนมัติ<br>หักคะแนน ' + fmt(r.integrity.penalty) + ' คะแนน และ<b>แจ้งครูผู้สอนแล้ว</b>');
+        });
       }).catch(function () { submitted = false; if (auto) toast('ส่งอัตโนมัติไม่สำเร็จ กรุณากดส่งอีกครั้ง', 'bad'); });
     }
+    /* ---------- กันทุจริต: ห้ามคัดลอกข้อสอบ ห้ามออกจากหน้าสอบ ---------- */
+    var strikes = s.strikes || 0, lastStrike = 0;
+    function drawStrikes() { strikeChip.className = 'chip ' + (strikes ? 'bad' : 'ok'); strikeChip.textContent = '🛡️ ' + strikes + '/' + s.maxStrikes; }
+    drawStrikes();
+    function strike(kind) {
+      if (submitted) return;
+      var now = Date.now(); if (now - lastStrike < 2500) return; lastStrike = now;
+      Api.call('reportIntegrity', { activityId: a.id, sessionId: s.sessionId, kind: kind }).then(function (r) {
+        strikes = r.count; drawStrikes();
+        if (r.kickOut) { submit(true, true); return; }
+        integrityAlert('🚨 แจ้งเตือนทุจริต ครั้งที่ ' + r.count + '/' + r.maxStrikes, 'ระบบตรวจพบการ<b>' + esc(r.kindName) + '</b> ระหว่างสอบ และบันทึกให้ครูเห็นแล้ว<br>หักคะแนน ' + r.penaltyPct + '% ต่อครั้ง · ถ้าครบ <b>' + r.maxStrikes + ' ครั้ง</b> ระบบจะส่งคำตอบและให้ออกจากการสอบทันที');
+      }).catch(function () {});
+    }
+    function isField(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'); }
+    var H = {
+      copy: function (e) { e.preventDefault(); strike('copy'); },
+      cut: function (e) { e.preventDefault(); strike('copy'); },
+      paste: function (e) { var t = (e.clipboardData && e.clipboardData.getData('text')) || ''; if (!ClipGuard.allowed(t)) { e.preventDefault(); strike('paste'); } },
+      contextmenu: function (e) { if (!isField(e.target)) e.preventDefault(); },
+      selectstart: function (e) { if (!isField(e.target)) e.preventDefault(); },
+      dragstart: function (e) { e.preventDefault(); },
+      keydown: function (e) {
+        var k = String(e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+        if (k === 'f12' || (mod && e.shiftKey && ['i', 'j', 'c'].indexOf(k) >= 0)) { e.preventDefault(); strike('devtools'); }
+        else if (mod && (k === 'p' || k === 's')) { e.preventDefault(); strike('print'); }
+        else if (mod && k === 'u') e.preventDefault();
+      },
+      visibilitychange: function () { if (document.visibilityState === 'hidden') strike('leave'); },
+      blur: function () { setTimeout(function () { if (!document.hasFocus() && !submitted) strike('leave'); }, 900); },
+      beforeprint: function () { strike('print'); }
+    };
+    Object.keys(H).forEach(function (k) { (k === 'blur' || k === 'beforeprint' ? window : document).addEventListener(k, H[k], true); });
+    view.classList.add('no-copy');
+    function cleanup() {
+      Object.keys(H).forEach(function (k) { (k === 'blur' || k === 'beforeprint' ? window : document).removeEventListener(k, H[k], true); });
+      view.classList.remove('no-copy');
+      if (window.__quizCleanup === cleanup) window.__quizCleanup = null;
+    }
+    window.__quizCleanup = cleanup;
     function ask() {
       var n = updateProg(), miss = s.questions.length - n;
       confirmBox('ส่งคำตอบ?', miss ? 'ยังไม่ได้ตอบ <b>' + miss + '</b> ข้อ ข้อที่ไม่ตอบจะได้ 0 คะแนน' : 'ตอบครบทุกข้อแล้ว', 'ส่งคำตอบ').then(function (ok) { if (ok) submit(false); });
@@ -513,6 +661,7 @@ var StudentApp = (function () {
     var pct = r.max ? Math.round(r.score / r.max * 100) : 0;
     c.innerHTML = '<div style="font-size:3rem">' + (pct >= 80 ? '🏆' : pct >= 50 ? '👍' : '📚') + '</div><h1>ได้ ' + fmt(r.score) + ' / ' + fmt(r.max) + ' คะแนน</h1>' +
       (r.late ? '<p class="chip bad">ส่งหลังหมดเวลา ไม่ได้คะแนน</p>' : '') +
+      (r.integrity && r.integrity.count ? '<p class="chip bad">🚨 ' + (r.integrity.cheat ? 'ทุจริต · ' : '') + 'ตรวจพบ ' + r.integrity.count + ' ครั้ง หัก ' + fmt(r.integrity.penalty) + ' คะแนน</p>' : '') +
       '<p class="muted">คะแนนดีที่สุด ' + fmt(r.best) + ' · ทำแล้ว ' + r.attemptsUsed + (r.maxAttempts ? '/' + r.maxAttempts : '') + ' ครั้ง' + (r.revealAnswers ? '' : '<br>เฉลยจะแสดงเมื่อใช้สิทธิ์ทำครบทุกครั้ง') + '</p>';
     view.appendChild(c);
     var qBy = {}; s.questions.forEach(function (q, i) { q.no = i + 1; qBy[q.id] = q; });
@@ -537,13 +686,26 @@ var StudentApp = (function () {
       var h = el('div', { class: 'card hero' });
       h.innerHTML = '<div class="ring" style="--p:' + m.overall.percent + '"><span>' + Math.round(m.overall.percent) + '%</span></div><div><h2 style="margin:0">คะแนนรวมทุกภารกิจ</h2><div>' + fmt(m.overall.earned) + ' / ' + fmt(m.overall.max) + ' คะแนน</div><div class="small muted">' + esc(m.student.room || '') + ' · ' + esc(m.student.studentCode) + '</div></div>';
       view.appendChild(h);
+      var dg = el('div', { class: 'dash-grid' });
+      var c1 = Charts.card('ร้อยละรายภารกิจ', 'เส้นประ = เกณฑ์ผ่าน ' + (st.info.passPercent || 60) + '%', 'span2');
+      Charts.hbars(c1, m.units.map(function (u) { return { label: (u.bonus ? '⭐ ' : u.no + '. ') + u.title, value: u.percent, ok: u.passed, tip: '<b>' + esc(u.title) + '</b><br>' + fmt(u.earned) + '/' + fmt(u.max) + ' คะแนน' }; }), { target: st.info.passPercent || 60, unit: '%' });
+      dg.appendChild(c1);
+      var c2 = Charts.card('ตามประเภทกิจกรรม', 'ร้อยละของคะแนนเต็ม');
+      Charts.hbars(c2, (m.byType || []).map(function (x) { return { label: TYPE_ICON[x.type] + ' ' + x.name, value: x.percent, tip: '<b>' + esc(x.name) + '</b><br>' + fmt(x.earned) + '/' + fmt(x.max) + ' คะแนน' }; }), { unit: '%' });
+      if (m.bonus && m.bonus.max) c2.appendChild(el('p', { class: 'small muted' }, '⭐ คะแนนพิเศษ ' + fmt(m.bonus.earned) + '/' + fmt(m.bonus.max) + ' (' + fmt(m.bonus.percent) + '%) แยกจากคะแนนหลัก'));
+      dg.appendChild(c2);
+      var c3 = Charts.card('การส่งงาน 14 วันล่าสุด', 'จำนวนครั้งต่อวัน', 'span3');
+      Charts.area(c3, (m.activity || []).map(function (d) { return { label: Charts.dayLabel(d.d), title: thDate(d.d, true), value: d.n }; }), { unit: 'ครั้ง', aria: 'จำนวนการส่งงานรายวัน' });
+      dg.appendChild(c3);
+      view.appendChild(dg);
+      var ug = el('div', { class: 'grid2' }); view.appendChild(ug);
       m.units.forEach(function (u) {
         var c = el('div', { class: 'card' });
-        var t = '<div class="row"><h3 class="grow" style="margin:0">ภารกิจที่ ' + u.no + ': ' + esc(u.title) + '</h3>' + (u.passed ? '<span class="chip ok">' + LEVEL_MEDAL[u.level.key] + ' ' + esc(u.level.name) + '</span>' : '<span class="chip">' + fmt(u.percent) + '%</span>') + '</div>';
+        var t = '<div class="row"><h3 class="grow" style="margin:0">' + (u.bonus ? '⭐ ภารกิจพิเศษ' : 'ภารกิจที่ ' + u.no) + ': ' + esc(u.title) + '</h3>' + (u.passed ? '<span class="chip ok">' + LEVEL_MEDAL[u.level.key] + ' ' + esc(u.level.name) + '</span>' : '<span class="chip">' + fmt(u.percent) + '%</span>') + '</div>';
         t += '<table class="tests"><tr><th>กิจกรรม</th><th>ได้</th><th>เต็ม</th><th>ครั้ง</th></tr>';
         u.activities.forEach(function (a) { t += '<tr><td>' + esc(a.typeName) + (a.override ? ' <span class="chip pri">ครูปรับ</span>' : '') + '</td><td>' + (a.max ? (a.done ? fmt(a.best) : '-') : (a.done ? '✓' : '-')) + '</td><td>' + (a.max ? fmt(a.max) : '-') + '</td><td>' + a.attempts + '</td></tr>'; });
         t += '<tr><th>รวม</th><th>' + fmt(u.earned) + '</th><th>' + fmt(u.max) + '</th><th>' + fmt(u.percent) + '%</th></tr></table>';
-        c.innerHTML = t; view.appendChild(c);
+        c.innerHTML = t; ug.appendChild(c);
       });
       if (m.history.length) {
         var hc = el('div', { class: 'card' }); var t = '<h3>ประวัติการส่งล่าสุด</h3><table class="tests"><tr><th>วันที่</th><th>กิจกรรม</th><th>คะแนน</th></tr>';
@@ -563,6 +725,22 @@ var StudentApp = (function () {
         var b = el('button', { class: 'btn primary', style: 'margin-top:12px' }, 'ไปทำภารกิจ'); b.onclick = function () { go('home', {}, true); }; e.appendChild(el('br')); e.appendChild(b);
         view.appendChild(e); return;
       }
+      var lv = { 'ดีเยี่ยม': 0, 'ดีมาก': 0, 'ผ่าน': 0 };
+      m.certificates.forEach(function (c) { if (c.unitId !== 'COURSE' && lv[c.level] !== undefined) lv[c.level]++; });
+      var mainCount = m.units.filter(function (u) { return !u.bonus; }).length;
+      var dg = el('div', { class: 'dash-grid' });
+      var c1 = Charts.card('ระดับเกียรติบัตรรายภารกิจ', 'ทั้งหมด ' + (lv['ดีเยี่ยม'] + lv['ดีมาก'] + lv['ผ่าน']) + ' ใบ');
+      Charts.donut(c1, [{ label: '🥇 ดีเยี่ยม (≥ 90%)', value: lv['ดีเยี่ยม'], cls: 'gold' }, { label: '🥈 ดีมาก (≥ 75%)', value: lv['ดีมาก'], cls: 'silver' }, { label: '🥉 ผ่าน', value: lv['ผ่าน'], cls: 'bronze' }],
+        { center: lv['ดีเยี่ยม'] + lv['ดีมาก'] + lv['ผ่าน'], sub: 'ใบ', aria: 'ระดับเกียรติบัตร' });
+      dg.appendChild(c1);
+      var c2 = Charts.card('เส้นทางสู่เกียรติบัตรสำเร็จหลักสูตร', 'ต้องผ่านภารกิจหลักครบ ' + mainCount + ' ภารกิจ', 'span2');
+      var got = m.units.filter(function (u) { return !u.bonus && u.passed; }).length;
+      Charts.hbars(c2, [{ label: 'ภารกิจหลักที่ผ่านแล้ว', value: mainCount ? got / mainCount * 100 : 0, text: got + '/' + mainCount, ok: got === mainCount }], { unit: '%' });
+      var row = el('div', { class: 'cert-strip' });
+      m.units.forEach(function (u) { var s = el('span', { class: u.passed ? 'on' : '', title: u.title }, u.passed ? LEVEL_MEDAL[u.level.key] : (u.bonus ? '⭐' : String(u.no))); row.appendChild(s); });
+      c2.appendChild(row);
+      dg.appendChild(c2);
+      view.appendChild(dg);
       var list = el('div', { class: 'cert-list' });
       m.certificates.slice().sort(function (a, b) { return a.unitId === 'COURSE' ? -1 : b.unitId === 'COURSE' ? 1 : (a.unitId < b.unitId ? -1 : 1); }).forEach(function (c) {
         var d = el('div', { class: 'card cert-card', role: 'button', tabindex: '0' });
